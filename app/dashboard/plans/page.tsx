@@ -3,9 +3,21 @@ import PlansClient from "./PlansClient";
 
 export default async function BrowsePlansPage() {
   const plans = await sql`
-    SELECT id, name, data_amount_gb, price, validity_days, description, instagram_message
+    SELECT 
+      id, 
+      name, 
+      data_amount_gb, 
+      price, 
+      validity_days, 
+      description, 
+      instagram_message,
+      is_highlighted,
+      is_on_sale,
+      sale_price,
+      badge_text
     FROM plans_catalog
-    ORDER BY data_amount_gb ASC
+    WHERE is_active IS NOT FALSE
+    ORDER BY is_highlighted DESC, data_amount_gb ASC
   `;
 
   return <PlansClient plans={plans as any} />;

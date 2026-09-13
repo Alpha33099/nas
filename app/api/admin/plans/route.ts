@@ -11,8 +11,22 @@ export async function GET() {
     }
 
     const plans = await sql`
-      SELECT id, name, data_amount_gb, price, validity_days, description, instagram_message, created_at
+      SELECT 
+        id, 
+        name, 
+        data_amount_gb, 
+        price, 
+        validity_days, 
+        description, 
+        instagram_message, 
+        is_highlighted, 
+        is_on_sale, 
+        sale_price, 
+        badge_text, 
+        is_active,
+        created_at
       FROM plans_catalog
+      WHERE is_active IS NOT FALSE
       ORDER BY data_amount_gb ASC
     `;
 
@@ -32,7 +46,18 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { name, data_amount_gb, price, validity_days, description, instagram_message } = body;
+    const {
+      name,
+      data_amount_gb,
+      price,
+      validity_days,
+      description,
+      instagram_message,
+      is_highlighted = false,
+      is_on_sale = false,
+      sale_price = null,
+      badge_text = null,
+    } = body;
 
     // Validate required fields
     if (!name || !data_amount_gb || !price || !validity_days) {
@@ -49,10 +74,36 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const parsedSalePrice = is_on_sale && sale_price ? Number(sale_price) : null;
+
     const newPlan = await sql`
-      INSERT INTO plans_catalog (name, data_amount_gb, price, validity_days, description, instagram_message)
-      VALUES (${name}, ${Number(data_amount_gb)}, ${Number(price)}, ${Number(validity_days)}, ${description || null}, ${instagram_message || null})
-      RETURNING id, name, data_amount_gb, price, validity_days
+      INSERT INTO plans_catalog (
+        name, 
+        data_amount_gb, 
+        price, 
+        validity_days, 
+        description, 
+        instagram_message,
+        is_highlighted,
+        is_on_sale,
+        sale_price,
+        badge_text,
+        is_active
+      )
+      VALUES (
+        ${name}, 
+        ${Number(data_amount_gb)}, 
+        ${Number(price)}, 
+        ${Number(validity_days)}, 
+        ${description || null}, 
+        ${instagram_message || null},
+        ${Boolean(is_highlighted)},
+        ${Boolean(is_on_sale)},
+        ${parsedSalePrice},
+        ${badge_text || null},
+        true
+      )
+      RETURNING id, name, data_amount_gb, price, validity_days, is_highlighted, is_on_sale, sale_price, badge_text
     `;
 
     // Log the action
@@ -77,7 +128,19 @@ export async function PUT(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { id, name, data_amount_gb, price, validity_days, description, instagram_message } = body;
+    const {
+      id,
+      name,
+      data_amount_gb,
+      price,
+      validity_days,
+      description,
+      instagram_message,
+      is_highlighted = false,
+      is_on_sale = false,
+      sale_price = null,
+      badge_text = null,
+    } = body;
 
     if (!id) {
       return NextResponse.json({ error: "Plan ID is required." }, { status: 400 });
@@ -96,6 +159,8 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: "Plan not found." }, { status: 404 });
     }
 
+    const parsedSalePrice = is_on_sale && sale_price ? Number(sale_price) : null;
+
     await sql`
       UPDATE plans_catalog
       SET name = ${name},
@@ -103,7 +168,11 @@ export async function PUT(request: NextRequest) {
           price = ${Number(price)},
           validity_days = ${Number(validity_days)},
           description = ${description || null},
-          instagram_message = ${instagram_message || null}
+          instagram_message = ${instagram_message || null},
+          is_highlighted = ${Boolean(is_highlighted)},
+          is_on_sale = ${Boolean(is_on_sale)},
+          sale_price = ${parsedSalePrice},
+          badge_text = ${badge_text || null}
       WHERE id = ${id}
     `;
 
@@ -117,5 +186,70 @@ export async function PUT(request: NextRequest) {
   } catch (error) {
     console.error("Update plan error:", error);
     return NextResponse.json({ error: "Something went wrong." }, { status: 500 });
+  }
+}
+
+// DELETE — Delete or archive a plan
+export async function DELETE(request: NextRequest) {
+  try {
+    const admin = await verifyAdminToken();
+    if (!admin) {
+      return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+    }
+
+    const { searchParams } = new URL(request.url);
+    let id = searchParams.get("id");
+
+    if (!id) {
+      const body = await request.json().catch(() => ({}));
+      id = body.id;
+    }
+
+    if (!id) {
+      return NextResponse.json({ error: "Plan ID is required." }, { status: 400 });
+    }
+
+    // Check if plan exists
+    const existing = await sql`SELECT id, name FROM plans_catalog WHERE id = ${id}`;
+    if (existing.length === 0) {
+      return NextResponse.json({ error: "Plan not found." }, { status: 404 });
+    }
+
+    const planName = existing[0].name;
+
+    // Check if plan is referenced by active or historical customer subscriptions
+    const usageCheck = await sql`SELECT COUNT(*) as count FROM customer_plans WHERE plan_catalog_id = ${id}`;
+    const inUse = Number(usageCheck[0].count);
+
+    if (inUse > 0) {
+      // Soft-delete to preserve subscriber history and FK integrity
+      await sql`UPDATE plans_catalog SET is_active = false WHERE id = ${id}`;
+      
+      await sql`
+        INSERT INTO activity_log (admin_id, action, target_type, target_id, details)
+        VALUES (${admin.id}, 'archived_plan', 'plan', ${id}, ${`Archived plan "${planName}" (retained for ${inUse} customer plan records)`})
+      `;
+
+      return NextResponse.json({
+        success: true,
+        message: `Plan "${planName}" was removed from the catalog.`,
+      });
+    }
+
+    // If completely unused, delete permanently
+    await sql`DELETE FROM plans_catalog WHERE id = ${id}`;
+
+    await sql`
+      INSERT INTO activity_log (admin_id, action, target_type, target_id, details)
+      VALUES (${admin.id}, 'deleted_plan', 'plan', ${id}, ${`Permanently deleted plan "${planName}"`})
+    `;
+
+    return NextResponse.json({
+      success: true,
+      message: `Plan "${planName}" deleted successfully.`,
+    });
+  } catch (error) {
+    console.error("Delete plan error:", error);
+    return NextResponse.json({ error: "Something went wrong deleting the plan." }, { status: 500 });
   }
 }

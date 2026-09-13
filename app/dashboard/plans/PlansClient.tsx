@@ -10,6 +10,10 @@ interface Plan {
   validity_days: number;
   description: string | null;
   instagram_message: string | null;
+  is_highlighted?: boolean;
+  is_on_sale?: boolean;
+  sale_price?: string | number | null;
+  badge_text?: string | null;
 }
 
 interface Props {
@@ -62,7 +66,10 @@ export default function PlansClient({ plans }: Props) {
 
   // Handle Buy click: Copy message + show toast + open Instagram DM in new tab
   async function handleBuy(plan: Plan) {
-    const defaultMsg = `Hi Simvaya! I'd like to purchase the ${plan.name} (${Number(plan.data_amount_gb)} GB, $${Number(plan.price).toFixed(2)}) plan.`;
+    const regularPrice = Number(plan.price);
+    const isOnSale = Boolean(plan.is_on_sale) && plan.sale_price !== null && plan.sale_price !== undefined && Number(plan.sale_price) > 0;
+    const effectivePrice = isOnSale ? Number(plan.sale_price) : regularPrice;
+    const defaultMsg = `Hi Simvaya! I'd like to purchase the ${plan.name} (${Number(plan.data_amount_gb)} GB, $${effectivePrice.toFixed(2)}${isOnSale ? " - Special Offer" : ""}) plan.`;
     const message = plan.instagram_message || defaultMsg;
 
     try {
@@ -229,32 +236,50 @@ export default function PlansClient({ plans }: Props) {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {filteredPlans.map((plan) => {
           const gb = Number(plan.data_amount_gb);
-          const price = Number(plan.price);
-          const pricePerGb = gb > 0 ? (price / gb).toFixed(2) : "0.00";
+          const regularPrice = Number(plan.price);
+          const isOnSale = Boolean(plan.is_on_sale) && plan.sale_price !== null && plan.sale_price !== undefined && Number(plan.sale_price) > 0;
+          const effectivePrice = isOnSale ? Number(plan.sale_price) : regularPrice;
+          const pricePerGb = gb > 0 ? (effectivePrice / gb).toFixed(2) : "0.00";
+          const isHighlighted = Boolean(plan.is_highlighted);
 
-          const isPopular = plan.name.toLowerCase().includes("5gb");
-          const isBestValue = plan.name.toLowerCase().includes("10gb") || plan.name.toLowerCase().includes("20gb");
+          const isPopular = isHighlighted || plan.name.toLowerCase().includes("5gb");
+          const isBestValue = !isPopular && (plan.name.toLowerCase().includes("10gb") || plan.name.toLowerCase().includes("20gb"));
 
           return (
             <div
               key={plan.id}
               className={`relative bg-white rounded-3xl p-6 sm:p-7 flex flex-col justify-between transition-all duration-200 ${
-                isPopular
-                  ? "border-2 border-teal-500 shadow-lg shadow-teal-500/10 ring-4 ring-teal-500/5"
+                isHighlighted
+                  ? "border-2 border-teal-500 shadow-lg shadow-teal-500/10 ring-4 ring-teal-500/5 bg-gradient-to-b from-teal-50/15 to-white"
+                  : isOnSale
+                  ? "border-2 border-rose-300 shadow-md shadow-rose-500/5"
                   : isBestValue
                   ? "border-2 border-slate-800 shadow-md"
                   : "border border-slate-200/90 shadow-xs hover:border-slate-300 hover:shadow-sm"
               }`}
             >
-              {/* Badge */}
-              {isPopular && (
-                <div className="absolute -top-3 right-6 bg-gradient-to-r from-teal-600 to-emerald-600 text-white text-3xs font-extrabold px-3 py-1 rounded-full uppercase tracking-wider shadow-sm">
-                  Most Popular
+              {/* Badges */}
+              {isHighlighted && (
+                <div className="absolute -top-3 right-6 bg-gradient-to-r from-teal-600 to-emerald-600 text-white text-3xs font-extrabold px-3 py-1 rounded-full uppercase tracking-wider shadow-sm flex items-center gap-1">
+                  <svg className="w-2.5 h-2.5 text-amber-300" fill="currentColor" viewBox="0 0 20 20">
+                    <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                  </svg>
+                  <span>{plan.badge_text || "Featured"}</span>
                 </div>
               )}
-              {!isPopular && isBestValue && (
+              {!isHighlighted && isOnSale && (
+                <div className="absolute -top-3 right-6 bg-gradient-to-r from-rose-600 to-orange-500 text-white text-3xs font-extrabold px-3 py-1 rounded-full uppercase tracking-wider shadow-sm">
+                  {plan.badge_text || "Special Offer"}
+                </div>
+              )}
+              {!isHighlighted && !isOnSale && isBestValue && (
                 <div className="absolute -top-3 right-6 bg-slate-900 text-teal-300 text-3xs font-extrabold px-3 py-1 rounded-full uppercase tracking-wider shadow-sm">
-                  Best Value
+                  {plan.badge_text || "Best Value"}
+                </div>
+              )}
+              {!isHighlighted && !isOnSale && !isBestValue && plan.badge_text && (
+                <div className="absolute -top-3 right-6 bg-indigo-600 text-white text-3xs font-extrabold px-3 py-1 rounded-full uppercase tracking-wider shadow-sm">
+                  {plan.badge_text}
                 </div>
               )}
 
@@ -279,10 +304,21 @@ export default function PlansClient({ plans }: Props) {
 
                 {/* Price Display */}
                 <div className="my-4 pb-4 border-b border-slate-100">
-                  <div className="flex items-baseline gap-1.5">
-                    <span className="text-3xl sm:text-4xl font-black text-slate-900 tracking-tight">
-                      ${price.toFixed(2)}
-                    </span>
+                  <div className="flex items-baseline gap-2">
+                    {isOnSale ? (
+                      <>
+                        <span className="text-3xl sm:text-4xl font-black text-rose-600 tracking-tight">
+                          ${effectivePrice.toFixed(2)}
+                        </span>
+                        <span className="text-sm font-semibold text-slate-400 line-through">
+                          ${regularPrice.toFixed(2)}
+                        </span>
+                      </>
+                    ) : (
+                      <span className="text-3xl sm:text-4xl font-black text-slate-900 tracking-tight">
+                        ${regularPrice.toFixed(2)}
+                      </span>
+                    )}
                     <span className="text-xs text-slate-400 font-medium">USD</span>
                   </div>
                   <div className="mt-1 flex items-center gap-2">
