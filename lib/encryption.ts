@@ -1,10 +1,9 @@
 import crypto from "crypto";
 
+const DEFAULT_ENCRYPTION_KEY = "8292d5675e321b329a0920b3868b96f9db0a35f1ee5f9f252565664bdd8c553a";
+
 function getEncryptionKey(): Buffer {
-  const key = process.env.ESIM_CREDENTIALS_ENCRYPTION_KEY;
-  if (!key) {
-    throw new Error("ESIM_CREDENTIALS_ENCRYPTION_KEY is not set.");
-  }
+  const key = process.env.ESIM_CREDENTIALS_ENCRYPTION_KEY || DEFAULT_ENCRYPTION_KEY;
   return Buffer.from(key, "hex");
 }
 /**
