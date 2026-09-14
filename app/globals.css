@@ -2,25 +2,45 @@
 
 :root {
   --background: #ffffff;
-  --foreground: #171717;
+  --foreground: #0F172A;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
+@theme {
+  --font-display: var(--font-manrope, var(--font-geist-sans, sans-serif));
+  --font-sans: var(--font-inter, var(--font-geist-sans, sans-serif));
+  --font-mono: var(--font-geist-mono, monospace);
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --color-navy-950: #0A1628;
+  --color-navy-900: #0F1F38;
+  --color-navy-800: #16294A;
+  --color-navy-700: #223761;
+
+  --color-teal-500: #14B8A6;
+  --color-teal-400: #2DD4BF;
+  --color-teal-600: #0D9488;
+
+  --color-mist-50: #F7F9FB;
+  --color-mist-100: #EEF2F6;
+  --color-mist-200: #DCE4EC;
+
+  --color-ink-900: #0F172A;
+  --color-ink-600: #475569;
+  --color-ink-400: #94A3B8;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--color-mist-50);
+  color: var(--color-ink-900);
+  font-family: var(--font-sans);
 }
+
+h1, h2, h3, h4 {
+  font-family: var(--font-display);
+}
+
+.prose-chat p { margin-bottom: 0.5rem; }
+.prose-chat p:last-child { margin-bottom: 0; }
+.prose-chat ul, .prose-chat ol { margin: 0.5rem 0; padding-left: 1.25rem; }
+.prose-chat li { margin-bottom: 0.25rem; }
+.prose-chat strong { font-weight: 600; color: var(--color-navy-950); }
+.prose-chat a { color: var(--color-teal-600); text-decoration: underline; }

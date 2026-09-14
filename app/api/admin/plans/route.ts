@@ -1,6 +1,7 @@
 import { sql } from "@/lib/db";
 import { verifyAdminToken } from "@/lib/auth";
 import { NextRequest, NextResponse } from "next/server";
+import { revalidatePath } from "next/cache";
 
 // GET — Fetch all plans
 export async function GET() {
@@ -112,6 +113,14 @@ export async function POST(request: NextRequest) {
       VALUES (${admin.id}, 'created_plan', 'plan', ${newPlan[0].id}, ${`Created plan "${name}"`})
     `;
 
+    // Revalidate public storefront routes immediately
+    try {
+      revalidatePath("/");
+      revalidatePath("/plans");
+      revalidatePath("/compare");
+      revalidatePath("/pakistan");
+    } catch {}
+
     return NextResponse.json({ success: true, plan: newPlan[0] });
   } catch (error) {
     console.error("Create plan error:", error);
@@ -182,6 +191,14 @@ export async function PUT(request: NextRequest) {
       VALUES (${admin.id}, 'updated_plan', 'plan', ${id}, ${`Updated plan "${name}"`})
     `;
 
+    // Revalidate public storefront routes immediately
+    try {
+      revalidatePath("/");
+      revalidatePath("/plans");
+      revalidatePath("/compare");
+      revalidatePath("/pakistan");
+    } catch {}
+
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error("Update plan error:", error);
@@ -243,6 +260,14 @@ export async function DELETE(request: NextRequest) {
       INSERT INTO activity_log (admin_id, action, target_type, target_id, details)
       VALUES (${admin.id}, 'deleted_plan', 'plan', ${id}, ${`Permanently deleted plan "${planName}"`})
     `;
+
+    // Revalidate public storefront routes immediately
+    try {
+      revalidatePath("/");
+      revalidatePath("/plans");
+      revalidatePath("/compare");
+      revalidatePath("/pakistan");
+    } catch {}
 
     return NextResponse.json({
       success: true,
