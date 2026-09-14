@@ -1,35 +1,7 @@
 import { sql } from "@/lib/db";
 import { verifyCustomerToken } from "@/lib/auth";
+import { calculateCurrentUsage } from "@/lib/usage";
 import Link from "next/link";
-
-// Simulate realistic usage between admin updates
-function getSimulatedUsage(
-  realUsedGb: number,
-  totalGb: number,
-  startDate: string,
-  expiryDate: string,
-  lastUpdateAt: string | null
-): number {
-  if (totalGb <= 0) return realUsedGb;
-
-  const start = new Date(startDate);
-  const expiry = new Date(expiryDate);
-  const planDays = Math.max(1, (expiry.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
-
-  const dailyRate = (totalGb * 0.7) / planDays;
-  const lastUpdate = lastUpdateAt ? new Date(lastUpdateAt) : start;
-  const now = new Date();
-  const daysSinceUpdate = Math.max(0, (now.getTime() - lastUpdate.getTime()) / (1000 * 60 * 60 * 24));
-
-  const hourFactor = 0.8 + (now.getHours() % 6) * 0.07;
-  const simulatedAdditional = daysSinceUpdate * dailyRate * hourFactor;
-
-  // Cap at total GB (cannot exceed 100% usage)
-  const maxUsage = totalGb;
-  const simulatedTotal = Math.min(realUsedGb + simulatedAdditional, maxUsage);
-
-  return Math.round(simulatedTotal * 100) / 100;
-}
 
 export default async function CustomerDashboardPage() {
   const customer = await verifyCustomerToken();
@@ -50,16 +22,20 @@ export default async function CustomerDashboardPage() {
 
   const displayName = customerData[0]?.display_name || customer.username;
 
-  // 2. Fetch Active plans only
+  // 2. Fetch Active plans only with calibration baseline
   const activePlans = await sql`
     SELECT 
       cp.id,
       cp.total_gb,
       cp.used_gb,
+      cp.manual_used_gb,
+      cp.manual_updated_at,
+      cp.daily_burn_rate,
       cp.start_date,
       cp.expiry_date,
       cp.status,
       cp.last_usage_update_at,
+      cp.created_at,
       pc.name as plan_name
     FROM customer_plans cp
     JOIN plans_catalog pc ON cp.plan_catalog_id = pc.id
@@ -82,19 +58,12 @@ export default async function CustomerDashboardPage() {
     ORDER BY cp.expiry_date DESC
   `;
 
-  // Calculate usage for each active plan individually (NEVER COMBINE)
+  // Calculate usage for each active plan individually using live auto-rate engine (NEVER COMBINE)
   const plansWithUsage = (activePlans as any[]).map((plan) => {
-    const displayedUsage = getSimulatedUsage(
-      Number(plan.used_gb),
-      Number(plan.total_gb),
-      plan.start_date,
-      plan.expiry_date,
-      plan.last_usage_update_at
-    );
-
-    const totalGb = Number(plan.total_gb);
-    const remainingGb = Math.max(0, totalGb - displayedUsage);
-    const usagePercent = totalGb > 0 ? Math.round((displayedUsage / totalGb) * 100) : 0;
+    const usage = calculateCurrentUsage(plan);
+    const displayedUsage = usage.currentUsedGb;
+    const remainingGb = usage.remainingGb;
+    const usagePercent = usage.percentUsed;
 
     const today = new Date();
     const expiry = new Date(plan.expiry_date);
@@ -109,6 +78,7 @@ export default async function CustomerDashboardPage() {
       remainingGb,
       usagePercent,
       daysRemaining,
+      dailyRate: usage.dailyRate,
       isLow: usagePercent >= 80,
       isExpiringSoon: daysRemaining <= 3,
     };

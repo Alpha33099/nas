@@ -46,8 +46,16 @@ export async function POST(
     // Create customer plan
     const planId = crypto.randomUUID();
     await sql`
-      INSERT INTO customer_plans (id, customer_id, plan_catalog_id, esim_id, total_gb, used_gb, start_date, expiry_date, status)
-      VALUES (${planId}, ${id}, ${plan_catalog_id}, ${esim_id || null}, ${plan.data_amount_gb}, 0, ${start_date}, ${expiryDateStr}, 'active')
+      INSERT INTO customer_plans (
+        id, customer_id, plan_catalog_id, esim_id, total_gb, used_gb,
+        manual_used_gb, manual_updated_at, daily_burn_rate,
+        start_date, expiry_date, status
+      )
+      VALUES (
+        ${planId}, ${id}, ${plan_catalog_id}, ${esim_id || null}, ${plan.data_amount_gb}, 0,
+        0, now(), 0,
+        ${start_date}, ${expiryDateStr}, 'active'
+      )
     `;
 
     // Log the action

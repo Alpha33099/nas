@@ -3,16 +3,21 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { calculateCurrentUsage } from "@/lib/usage";
 
 interface Plan {
   id: string;
   plan_name: string;
-  total_gb: string;
-  used_gb: string;
+  total_gb: string | number;
+  used_gb: string | number;
+  manual_used_gb?: string | number | null;
+  manual_updated_at?: string | null;
+  daily_burn_rate?: string | number | null;
   start_date: string;
   expiry_date: string;
   status: string;
   last_usage_update_at: string | null;
+  created_at?: string | null;
   esim_id: string | null;
 }
 
@@ -67,6 +72,10 @@ export default function CustomerDetail({ customer, plans, esims, planCatalog }: 
   const [usageValues, setUsageValues] = useState<Record<string, string>>({});
   const [usageLoading, setUsageLoading] = useState<string | null>(null);
   const [usageSuccess, setUsageSuccess] = useState<string | null>(null);
+
+  // Delete plan state
+  const [deletePlanId, setDeletePlanId] = useState<string | null>(null);
+  const [deletePlanLoading, setDeletePlanLoading] = useState(false);
 
   // Add plan state
   const [showAddPlan, setShowAddPlan] = useState(false);
@@ -144,11 +153,39 @@ export default function CustomerDetail({ customer, plans, esims, planCatalog }: 
       }
       setUsageLoading(null);
       setUsageSuccess(planId);
-      setTimeout(() => setUsageSuccess(null), 2000);
+      setTimeout(() => setUsageSuccess(null), 2500);
+      showSuccess("Usage baseline updated successfully!");
       router.refresh();
     } catch {
       setError("Failed to update usage.");
       setUsageLoading(null);
+    }
+  }
+
+  // ── Delete Customer Plan ─────────────────────────────
+  async function handleDeletePlan(planId: string) {
+    setDeletePlanLoading(true);
+    setError("");
+
+    try {
+      const res = await fetch(`/api/admin/customers/${customer.id}/delete-plan?plan_id=${planId}`, {
+        method: "DELETE",
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error);
+        setDeletePlanLoading(false);
+        setDeletePlanId(null);
+        return;
+      }
+      setDeletePlanLoading(false);
+      setDeletePlanId(null);
+      showSuccess("Plan removed successfully!");
+      router.refresh();
+    } catch {
+      setError("Failed to delete plan.");
+      setDeletePlanLoading(false);
+      setDeletePlanId(null);
     }
   }
 
@@ -443,11 +480,10 @@ export default function CustomerDetail({ customer, plans, esims, planCatalog }: 
         ) : (
           <div className="space-y-4">
             {activePlans.map((plan) => {
-              const usagePercent = Number(plan.total_gb) > 0
-                ? Math.round((Number(plan.used_gb) / Number(plan.total_gb)) * 100)
-                : 0;
+              const usage = calculateCurrentUsage(plan);
+              const usagePercent = usage.percentUsed;
               const isHigh = usagePercent >= 80;
-              const currentValue = usageValues[plan.id] ?? String(plan.used_gb);
+              const currentValue = usageValues[plan.id] ?? String(plan.manual_used_gb ?? plan.used_gb ?? "0");
 
               return (
                 <div key={plan.id} className="bg-white rounded-2xl border border-slate-200/90 p-5 sm:p-6 shadow-2xs">
@@ -469,12 +505,16 @@ export default function CustomerDetail({ customer, plans, esims, planCatalog }: 
                     </span>
                   </div>
 
-                  {/* Progress Bar */}
+                  {/* Progress Bar & Real-time Usage */}
                   <div className="mb-4 bg-slate-50 p-4 rounded-xl border border-slate-200/80">
                     <div className="flex justify-between items-center text-xs mb-2">
-                      <span className="font-medium text-slate-600">
-                        {Number(plan.used_gb).toFixed(2)} GB used of {Number(plan.total_gb)} GB
-                      </span>
+                      <div>
+                        <span className="font-bold text-slate-900">
+                          {usage.currentUsedGb.toFixed(2)} GB
+                        </span>
+                        <span className="text-slate-500 font-medium"> used of {Number(plan.total_gb)} GB</span>
+                        <span className="text-slate-400 ml-2">({usage.remainingGb.toFixed(2)} GB remaining)</span>
+                      </div>
                       <span className={`font-bold ${isHigh ? "text-rose-600" : "text-slate-800"}`}>
                         {usagePercent}% utilized
                       </span>
@@ -484,6 +524,24 @@ export default function CustomerDetail({ customer, plans, esims, planCatalog }: 
                         className={`h-2.5 rounded-full transition-all ${isHigh ? "bg-rose-500" : "bg-teal-500"}`}
                         style={{ width: `${Math.min(usagePercent, 100)}%` }}
                       />
+                    </div>
+
+                    {/* Calibration pace and anchor metadata */}
+                    <div className="mt-2.5 pt-2 border-t border-slate-200/60 flex flex-wrap items-center justify-between gap-2 text-2xs text-slate-500">
+                      <div>
+                        <span className="text-slate-400">Admin Anchor: </span>
+                        <span className="font-semibold text-slate-700 font-mono">{usage.manualGb.toFixed(2)} GB</span>
+                        {plan.manual_updated_at && (
+                          <span className="text-slate-400"> (set {new Date(plan.manual_updated_at).toLocaleDateString()})</span>
+                        )}
+                      </div>
+                      <div>
+                        <span className="text-slate-400">Auto-Rate: </span>
+                        <span className="font-semibold text-teal-700 font-mono">~{usage.dailyRate.toFixed(2)} GB/day</span>
+                        {usage.additionalGb > 0 && (
+                          <span className="text-slate-400"> (+{usage.additionalGb.toFixed(2)} GB auto-accumulated)</span>
+                        )}
+                      </div>
                     </div>
                   </div>
 
@@ -505,43 +563,81 @@ export default function CustomerDetail({ customer, plans, esims, planCatalog }: 
                     </div>
                   </div>
 
-                  {/* Inline Update Usage */}
-                  <div className="flex flex-wrap items-center gap-2.5 pt-3 border-t border-slate-100">
-                    <label className="text-xs font-semibold text-slate-700 whitespace-nowrap">
-                      Update Usage:
-                    </label>
-                    <div className="flex items-center gap-1.5">
-                      <input
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        max={Number(plan.total_gb)}
-                        value={currentValue}
-                        onChange={(e) =>
-                          setUsageValues((prev) => ({ ...prev, [plan.id]: e.target.value }))
-                        }
-                        className="w-24 px-3 py-1.5 rounded-lg border border-slate-300 text-xs font-semibold text-slate-800
-                                   focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
-                      />
-                      <span className="text-xs text-slate-500 font-medium">GB</span>
+                  {/* Inline Update Usage and Delete Controls */}
+                  <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-slate-100">
+                    <div className="flex flex-wrap items-center gap-2.5">
+                      <label className="text-xs font-semibold text-slate-700 whitespace-nowrap">
+                        Update Usage:
+                      </label>
+                      <div className="flex items-center gap-1.5">
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          max={Number(plan.total_gb)}
+                          value={currentValue}
+                          onChange={(e) =>
+                            setUsageValues((prev) => ({ ...prev, [plan.id]: e.target.value }))
+                          }
+                          className="w-24 px-3 py-1.5 rounded-lg border border-slate-300 text-xs font-semibold text-slate-800 font-mono
+                                     focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
+                        />
+                        <span className="text-xs text-slate-500 font-medium">GB</span>
+                      </div>
+                      <button
+                        onClick={() => handleUpdateUsage(plan.id)}
+                        disabled={usageLoading === plan.id}
+                        className="px-3.5 py-1.5 bg-slate-900 text-white text-xs font-semibold rounded-lg
+                                   hover:bg-slate-800 disabled:opacity-50 transition-colors shadow-2xs"
+                      >
+                        {usageLoading === plan.id ? "Saving..." : "Save Usage"}
+                      </button>
+                      {usageSuccess === plan.id && (
+                        <span className="text-xs text-teal-600 font-semibold flex items-center gap-1">
+                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                          </svg>
+                          Saved
+                        </span>
+                      )}
                     </div>
+
                     <button
-                      onClick={() => handleUpdateUsage(plan.id)}
-                      disabled={usageLoading === plan.id}
-                      className="px-3.5 py-1.5 bg-slate-900 text-white text-xs font-semibold rounded-lg
-                                 hover:bg-slate-800 disabled:opacity-50 transition-colors shadow-2xs"
+                      onClick={() => setDeletePlanId(plan.id)}
+                      className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-rose-600 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition-colors border border-transparent hover:border-rose-200"
                     >
-                      {usageLoading === plan.id ? "Saving..." : "Save Usage"}
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      </svg>
+                      <span>Delete Plan</span>
                     </button>
-                    {usageSuccess === plan.id && (
-                      <span className="text-xs text-teal-600 font-semibold flex items-center gap-1">
-                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                        </svg>
-                        Saved
-                      </span>
-                    )}
                   </div>
+
+                  {/* Confirmation for deleting plan */}
+                  {deletePlanId === plan.id && (
+                    <div className="mt-3 p-3.5 bg-rose-50 border border-rose-200 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-in fade-in">
+                      <div>
+                        <p className="text-xs font-bold text-rose-900">Remove this plan from customer?</p>
+                        <p className="text-2xs text-rose-700">This will permanently delete this plan record and its usage history.</p>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <button
+                          onClick={() => handleDeletePlan(plan.id)}
+                          disabled={deletePlanLoading}
+                          className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold rounded-lg transition-colors"
+                        >
+                          {deletePlanLoading ? "Deleting..." : "Yes, Delete"}
+                        </button>
+                        <button
+                          onClick={() => setDeletePlanId(null)}
+                          disabled={deletePlanLoading}
+                          className="px-3 py-1.5 bg-white text-slate-700 text-xs font-semibold rounded-lg border border-slate-300 hover:bg-slate-50 transition-colors"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -625,6 +721,7 @@ export default function CustomerDetail({ customer, plans, esims, planCatalog }: 
                   <th className="px-4 py-3 font-bold text-slate-500">Active Duration</th>
                   <th className="px-4 py-3 font-bold text-slate-500">Final Usage</th>
                   <th className="px-4 py-3 font-bold text-slate-500">Status</th>
+                  <th className="px-4 py-3 font-bold text-slate-500 text-right">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -641,6 +738,15 @@ export default function CustomerDetail({ customer, plans, esims, planCatalog }: 
                       <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-500 font-semibold text-2xs">
                         Expired
                       </span>
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <button
+                        onClick={() => handleDeletePlan(plan.id)}
+                        disabled={deletePlanLoading}
+                        className="text-xs font-semibold text-rose-600 hover:text-rose-700 hover:underline"
+                      >
+                        Delete
+                      </button>
                     </td>
                   </tr>
                 ))}

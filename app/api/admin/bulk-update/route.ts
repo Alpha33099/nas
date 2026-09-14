@@ -1,5 +1,6 @@
 import { sql } from "@/lib/db";
 import { verifyAdminToken } from "@/lib/auth";
+import { recordManualUsage, calculateCurrentUsage } from "@/lib/usage-server";
 import { NextRequest, NextResponse } from "next/server";
 
 // GET — Fetch all active customer plans
@@ -15,8 +16,14 @@ export async function GET() {
         cp.id,
         cp.total_gb,
         cp.used_gb,
+        cp.manual_used_gb,
+        cp.manual_updated_at,
+        cp.daily_burn_rate,
+        cp.start_date,
         cp.expiry_date,
+        cp.status,
         cp.last_usage_update_at,
+        cp.created_at,
         pc.name as plan_name,
         c.username as customer_username,
         c.display_name as customer_display_name
@@ -27,7 +34,18 @@ export async function GET() {
       ORDER BY c.username ASC, cp.expiry_date ASC
     `;
 
-    return NextResponse.json({ success: true, plans: activePlans });
+    const plansWithLiveUsage = (activePlans as any[]).map((plan) => {
+      const usage = calculateCurrentUsage(plan);
+      return {
+        ...plan,
+        live_used_gb: usage.currentUsedGb,
+        remaining_gb: usage.remainingGb,
+        percent_used: usage.percentUsed,
+        daily_rate: usage.dailyRate,
+      };
+    });
+
+    return NextResponse.json({ success: true, plans: plansWithLiveUsage });
   } catch (error) {
     console.error("Fetch active plans error:", error);
     return NextResponse.json({ error: "Something went wrong." }, { status: 500 });
@@ -69,23 +87,12 @@ export async function PUT(request: NextRequest) {
       }
     }
 
-    // Update each plan
+    // Update each plan with calibrated anchor and burn rate
     let updatedCount = 0;
     for (const update of updates) {
-      await sql`
-        UPDATE customer_plans
-        SET used_gb = ${Number(update.used_gb)},
-            last_usage_update_at = now()
-        WHERE id = ${update.plan_id} AND status = 'active'
-      `;
+      await recordManualUsage(update.plan_id, Number(update.used_gb), admin.id);
       updatedCount++;
     }
-
-    // Log the action
-    await sql`
-      INSERT INTO activity_log (admin_id, action, target_type, target_id, details)
-      VALUES (${admin.id}, 'bulk_usage_update', 'customer_plan', NULL, ${`Updated usage for ${updatedCount} plan(s)`})
-    `;
 
     return NextResponse.json({
       success: true,

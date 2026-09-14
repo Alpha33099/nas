@@ -25,8 +25,9 @@ export default async function CustomerDetailPage({
   // Fetch all plans for this customer
   const plans = await sql`
     SELECT 
-      cp.id, cp.total_gb, cp.used_gb, cp.start_date, cp.expiry_date,
-      cp.status, cp.last_usage_update_at, cp.esim_id,
+      cp.id, cp.total_gb, cp.used_gb, cp.manual_used_gb, cp.manual_updated_at,
+      cp.daily_burn_rate, cp.start_date, cp.expiry_date,
+      cp.status, cp.last_usage_update_at, cp.created_at, cp.esim_id,
       pc.name as plan_name, pc.data_amount_gb as plan_data_gb
     FROM customer_plans cp
     JOIN plans_catalog pc ON cp.plan_catalog_id = pc.id

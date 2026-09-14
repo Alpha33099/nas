@@ -4,8 +4,12 @@ import { useState, useEffect } from "react";
 
 interface ActivePlan {
   id: string;
-  total_gb: string;
-  used_gb: string;
+  total_gb: string | number;
+  used_gb: string | number;
+  manual_used_gb?: string | number | null;
+  live_used_gb?: number;
+  percent_used?: number;
+  daily_rate?: number;
   expiry_date: string;
   last_usage_update_at: string | null;
   plan_name: string;
@@ -29,10 +33,10 @@ export default function BulkUpdatePage() {
         const data = await res.json();
         if (data.success) {
           setPlans(data.plans);
-          // Initialize edited values with current values
+          // Initialize edited values with manual baseline
           const initial: Record<string, string> = {};
           data.plans.forEach((p: ActivePlan) => {
-            initial[p.id] = String(p.used_gb);
+            initial[p.id] = String(p.manual_used_gb ?? p.used_gb);
           });
           setEditedValues(initial);
         }
@@ -47,7 +51,7 @@ export default function BulkUpdatePage() {
   // Find which values actually changed
   function getChangedPlans() {
     return plans.filter((p) => {
-      const original = String(p.used_gb);
+      const original = String(p.manual_used_gb ?? p.used_gb);
       const edited = editedValues[p.id];
       return edited !== undefined && edited !== original;
     });
@@ -87,7 +91,7 @@ export default function BulkUpdatePage() {
         setPlans(refreshData.plans);
         const newValues: Record<string, string> = {};
         refreshData.plans.forEach((p: ActivePlan) => {
-          newValues[p.id] = String(p.used_gb);
+          newValues[p.id] = String(p.manual_used_gb ?? p.used_gb);
         });
         setEditedValues(newValues);
       }
@@ -227,11 +231,11 @@ export default function BulkUpdatePage() {
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {plans.map((plan) => {
-                    const currentVal = Number(editedValues[plan.id] || plan.used_gb);
+                    const currentVal = Number(editedValues[plan.id] || plan.manual_used_gb || plan.used_gb);
                     const totalNum = Number(plan.total_gb);
                     const usagePercent = totalNum > 0 ? Math.round((currentVal / totalNum) * 100) : 0;
                     const isHigh = usagePercent >= 80;
-                    const isChanged = editedValues[plan.id] !== undefined && editedValues[plan.id] !== String(plan.used_gb);
+                    const isChanged = editedValues[plan.id] !== undefined && editedValues[plan.id] !== String(plan.manual_used_gb ?? plan.used_gb);
 
                     const expiry = new Date(plan.expiry_date);
                     const today = new Date();
@@ -259,7 +263,7 @@ export default function BulkUpdatePage() {
                               step="0.01"
                               min="0"
                               max={totalNum}
-                              value={editedValues[plan.id] ?? plan.used_gb}
+                              value={editedValues[plan.id] ?? String(plan.manual_used_gb ?? plan.used_gb)}
                               onChange={(e) =>
                                 setEditedValues((prev) => ({ ...prev, [plan.id]: e.target.value }))
                               }
@@ -273,6 +277,11 @@ export default function BulkUpdatePage() {
                             />
                             <span className="text-2xs text-slate-400 font-medium">GB</span>
                           </div>
+                          {plan.live_used_gb !== undefined && (
+                            <p className="text-3xs text-teal-600 font-medium mt-0.5 whitespace-nowrap font-mono">
+                              Live: {plan.live_used_gb.toFixed(2)} GB {plan.daily_rate ? `(~${plan.daily_rate.toFixed(2)} GB/d)` : ""}
+                            </p>
+                          )}
                         </td>
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-2 min-w-[120px]">
@@ -304,11 +313,11 @@ export default function BulkUpdatePage() {
           {/* Mobile Cards */}
           <div className="sm:hidden space-y-3">
             {plans.map((plan) => {
-              const currentVal = Number(editedValues[plan.id] || plan.used_gb);
+              const currentVal = Number(editedValues[plan.id] || plan.manual_used_gb || plan.used_gb);
               const totalNum = Number(plan.total_gb);
               const usagePercent = totalNum > 0 ? Math.round((currentVal / totalNum) * 100) : 0;
               const isHigh = usagePercent >= 80;
-              const isChanged = editedValues[plan.id] !== undefined && editedValues[plan.id] !== String(plan.used_gb);
+              const isChanged = editedValues[plan.id] !== undefined && editedValues[plan.id] !== String(plan.manual_used_gb ?? plan.used_gb);
 
               return (
                 <div
@@ -332,6 +341,12 @@ export default function BulkUpdatePage() {
                     <span className="font-mono">{new Date(plan.expiry_date).toISOString().split("T")[0]}</span>
                   </div>
 
+                  {plan.live_used_gb !== undefined && (
+                    <p className="text-3xs text-teal-600 font-medium mb-2 font-mono">
+                      Live pace: {plan.live_used_gb.toFixed(2)} GB {plan.daily_rate ? `(~${plan.daily_rate.toFixed(2)} GB/d)` : ""}
+                    </p>
+                  )}
+
                   <div className="flex items-center gap-2 pt-2 border-t border-slate-100">
                     <label className="text-xs font-semibold text-slate-700">Used (GB):</label>
                     <input
@@ -339,7 +354,7 @@ export default function BulkUpdatePage() {
                       step="0.01"
                       min="0"
                       max={totalNum}
-                      value={editedValues[plan.id] ?? plan.used_gb}
+                      value={editedValues[plan.id] ?? String(plan.manual_used_gb ?? plan.used_gb)}
                       onChange={(e) =>
                         setEditedValues((prev) => ({ ...prev, [plan.id]: e.target.value }))
                       }

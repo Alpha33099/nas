@@ -3,14 +3,22 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { calculateCurrentUsage } from "@/lib/usage";
 
 interface Plan {
   id: string;
   plan_name: string;
-  total_gb: string;
-  used_gb: string;
+  total_gb: string | number;
+  used_gb: string | number;
+  manual_used_gb?: string | number | null;
+  manual_updated_at?: string | null;
+  daily_burn_rate?: string | number | null;
+  start_date?: string;
   expiry_date: string;
   status: string;
+  last_usage_update_at?: string | null;
+  created_at?: string | null;
+  liveUsedGb?: number;
 }
 
 interface Customer {
@@ -63,16 +71,21 @@ export default function CustomerList({ initialCustomers }: Props) {
     const plans = parsePlans(c.plans);
     const activePlans = plans.filter((p) => p.status === "active");
 
-    // Calculate highest usage % among active plans
+    // Calculate highest usage % among active plans using live auto-rate engine
     let highestUsage = 0;
-    let highestUsagePlan: Plan | null = null;
+    let highestLiveGb: number | null = null;
+    let highestTotalGb: number | null = null;
+
     activePlans.forEach((p) => {
-      const usage = Number(p.total_gb) > 0
-        ? (Number(p.used_gb) / Number(p.total_gb)) * 100
-        : 0;
-      if (usage > highestUsage) {
-        highestUsage = usage;
-        highestUsagePlan = p;
+      const usage = calculateCurrentUsage({
+        ...p,
+        total_gb: Number(p.total_gb),
+        start_date: p.start_date || new Date().toISOString(),
+      });
+      if (usage.percentUsed > highestUsage || highestLiveGb === null) {
+        highestUsage = usage.percentUsed;
+        highestLiveGb = usage.currentUsedGb;
+        highestTotalGb = Number(p.total_gb);
       }
     });
 
@@ -94,7 +107,8 @@ export default function CustomerList({ initialCustomers }: Props) {
       activePlans,
       activePlanCount: activePlans.length,
       highestUsage: Math.round(highestUsage),
-      highestUsagePlan,
+      highestLiveGb,
+      highestTotalGb,
       nearestExpiry,
       daysUntilExpiry,
     };
@@ -330,13 +344,13 @@ export default function CustomerList({ initialCustomers }: Props) {
 
                       {/* Metadata row */}
                       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500 mt-1.5">
-                        {customer.activePlanCount > 0 && customer.highestUsagePlan && (
-                          <div className="flex items-center gap-2 min-w-[150px]">
+                        {customer.activePlanCount > 0 && customer.highestLiveGb !== null && (
+                          <div className="flex items-center gap-2 min-w-[170px]">
                             <span className="text-slate-400">Usage:</span>
                             <span className={`font-semibold ${isHighUsage ? "text-rose-600" : "text-slate-700"}`}>
-                              {customer.highestUsage}%
+                              {Number(customer.highestLiveGb).toFixed(1)} / {Number(customer.highestTotalGb)} GB ({customer.highestUsage}%)
                             </span>
-                            <div className="w-16 bg-slate-100 rounded-full h-1.5 overflow-hidden inline-block">
+                            <div className="w-14 bg-slate-100 rounded-full h-1.5 overflow-hidden inline-block shrink-0">
                               <div
                                 className={`h-1.5 rounded-full ${isHighUsage ? "bg-rose-500" : "bg-teal-500"}`}
                                 style={{ width: `${Math.min(100, customer.highestUsage)}%` }}

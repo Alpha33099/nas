@@ -1,5 +1,6 @@
 import { sql } from "@/lib/db";
 import { verifyAdminToken } from "@/lib/auth";
+import { recordManualUsage } from "@/lib/usage-server";
 import { NextRequest, NextResponse } from "next/server";
 
 export async function PUT(
@@ -33,14 +34,10 @@ export async function PUT(
       return NextResponse.json({ error: "Plan not found for this customer." }, { status: 404 });
     }
 
-    // Update usage
-    await sql`
-      UPDATE customer_plans
-      SET used_gb = ${Number(used_gb)}, last_usage_update_at = now()
-      WHERE id = ${plan_id}
-    `;
+    // Update usage using calibrated auto-rate calculation
+    const result = await recordManualUsage(plan_id, Number(used_gb), admin.id);
 
-    return NextResponse.json({ success: true });
+    return NextResponse.json({ ...result });
   } catch (error) {
     console.error("Update usage error:", error);
     return NextResponse.json({ error: "Something went wrong." }, { status: 500 });

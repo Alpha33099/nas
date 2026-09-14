@@ -1,4 +1,5 @@
 import { sql } from "@/lib/db";
+import { calculateCurrentUsage } from "@/lib/usage";
 import Link from "next/link";
 
 export default async function AdminDashboardPage() {
@@ -9,9 +10,10 @@ export default async function AdminDashboardPage() {
   const planCatalogCount = await sql`SELECT COUNT(*) as count FROM plans_catalog`;
 
   // Plans expiring in 3 days
-  const expiringSoon = await sql`
-    SELECT cp.expiry_date, cp.total_gb, cp.used_gb, pc.name as plan_name,
-           c.display_name, c.username
+  const expiringSoonRaw = await sql`
+    SELECT cp.id, cp.expiry_date, cp.total_gb, cp.used_gb, cp.manual_used_gb, cp.manual_updated_at,
+           cp.daily_burn_rate, cp.start_date, cp.status, cp.last_usage_update_at, cp.created_at,
+           pc.name as plan_name, c.display_name, c.username
     FROM customer_plans cp
     JOIN plans_catalog pc ON cp.plan_catalog_id = pc.id
     JOIN customers c ON cp.customer_id = c.id
@@ -20,20 +22,38 @@ export default async function AdminDashboardPage() {
     ORDER BY cp.expiry_date ASC
     LIMIT 5
   `;
+  const expiringSoon = (expiringSoonRaw as any[]).map((p) => {
+    const usage = calculateCurrentUsage(p);
+    return {
+      ...p,
+      used_gb: usage.currentUsedGb,
+    };
+  });
 
-  // High usage plans (>=80%)
-  const highUsage = await sql`
-    SELECT cp.total_gb, cp.used_gb, pc.name as plan_name,
-           c.display_name, c.username, c.id as customer_id
+  // Active plans to evaluate high usage (>=80%) dynamically
+  const activePlansForAlerts = await sql`
+    SELECT cp.id, cp.total_gb, cp.used_gb, cp.manual_used_gb, cp.manual_updated_at, cp.daily_burn_rate,
+           cp.start_date, cp.expiry_date, cp.status, cp.last_usage_update_at, cp.created_at,
+           pc.name as plan_name, c.display_name, c.username, c.id as customer_id
     FROM customer_plans cp
     JOIN plans_catalog pc ON cp.plan_catalog_id = pc.id
     JOIN customers c ON cp.customer_id = c.id
     WHERE cp.status = 'active'
       AND cp.total_gb > 0
-      AND (cp.used_gb::numeric / cp.total_gb::numeric) >= 0.8
-    ORDER BY (cp.used_gb::numeric / cp.total_gb::numeric) DESC
-    LIMIT 5
   `;
+
+  const highUsage = (activePlansForAlerts as any[])
+    .map((p) => {
+      const usage = calculateCurrentUsage(p);
+      return {
+        ...p,
+        used_gb: usage.currentUsedGb,
+        percent: usage.percentUsed,
+      };
+    })
+    .filter((p) => p.percent >= 80)
+    .sort((a, b) => b.percent - a.percent)
+    .slice(0, 5);
 
   // Recent activity
   const recentActivity = await sql`

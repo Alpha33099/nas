@@ -17,7 +17,13 @@ export default async function CustomersPage() {
             'plan_name', pc.name,
             'total_gb', cp.total_gb,
             'used_gb', cp.used_gb,
+            'manual_used_gb', cp.manual_used_gb,
+            'manual_updated_at', cp.manual_updated_at,
+            'daily_burn_rate', cp.daily_burn_rate,
+            'start_date', cp.start_date,
             'expiry_date', cp.expiry_date,
+            'last_usage_update_at', cp.last_usage_update_at,
+            'created_at', cp.created_at,
             'status', cp.status
           )
         ) FILTER (WHERE cp.id IS NOT NULL),

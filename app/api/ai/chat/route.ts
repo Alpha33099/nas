@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { verifyCustomerToken } from "@/lib/auth";
 import { sql } from "@/lib/db";
+import { calculateCurrentUsage } from "@/lib/usage";
 
 export async function POST(req: Request) {
   try {
@@ -47,6 +48,29 @@ export async function POST(req: Request) {
       plansListText = "- 1GB ($4.99, 7 days)\n- 3GB ($9.99, 15 days)\n- 5GB ($14.99, 21 days)\n- 10GB ($24.99, 30 days)\n- 20GB ($39.99, 30 days)\n- 50GB ($69.99, 30 days)";
     }
 
+    // 2. Fetch logged-in customer's active subscription plans and live data
+    let customerPlanContext = "The customer currently has no active travel eSIM plans.";
+    try {
+      const customerPlans = await sql`
+        SELECT cp.id, cp.total_gb, cp.used_gb, cp.manual_used_gb, cp.manual_updated_at,
+               cp.daily_burn_rate, cp.start_date, cp.expiry_date, cp.status,
+               pc.name as plan_name
+        FROM customer_plans cp
+        JOIN plans_catalog pc ON cp.plan_catalog_id = pc.id
+        WHERE cp.customer_id = ${customer.id} AND cp.status = 'active'
+      `;
+      if (customerPlans.length > 0) {
+        const planDetails = (customerPlans as any[]).map((p) => {
+          const usage = calculateCurrentUsage(p);
+          const daysLeft = Math.max(0, Math.ceil((new Date(p.expiry_date).getTime() - Date.now()) / (1000 * 60 * 60 * 24)));
+          return `- ${p.plan_name}: ${usage.remainingGb.toFixed(2)} GB remaining out of ${Number(p.total_gb)} GB (${usage.currentUsedGb.toFixed(2)} GB used, expires in ${daysLeft} days on ${new Date(p.expiry_date).toISOString().split("T")[0]})`;
+        });
+        customerPlanContext = `CUSTOMER'S ACTIVE SUBSCRIPTIONS (Live Account Data):\n${planDetails.join("\n")}`;
+      }
+    } catch (custErr) {
+      console.warn("Could not load customer plans for AI:", custErr);
+    }
+
     const systemPrompt = `You are the official Simvaya AI Travel Assistant. Your goal is to guide travelers in selecting the ideal eSIM global data package, answer roaming queries, and provide quick setup tips.
 
 LANGUAGE & TONE CAPABILITIES:
@@ -56,6 +80,8 @@ LANGUAGE & TONE CAPABILITIES:
 - Keep answers concise, clear, and travel-savvy (2-4 sentences max per answer).
 - NEVER use yellow emojis (no 📡, ⚠️, ✈️, 👋, etc.). Use clean bullet points or standard punctuation.
 - Always encourage them to tap 'Buy on IG' or DM @simvaya21 on Instagram to activate.
+
+${customerPlanContext}
 
 CURRENT LIVE SIMVAYA PLANS CATALOG (Directly from database - always use these exact plans and prices):
 ${plansListText}
