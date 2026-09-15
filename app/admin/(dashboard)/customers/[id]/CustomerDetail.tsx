@@ -44,9 +44,12 @@ interface LoginLog {
   country: string;
   city: string;
   region: string;
+  locality?: string | null;
   isp: string;
   latitude: string;
   longitude: string;
+  accuracy?: string | null;
+  source?: string | null;
   device_summary: string;
   is_first_login: boolean;
   created_at: string;
@@ -64,15 +67,21 @@ interface Props {
     first_login_city?: string | null;
     first_login_region?: string | null;
     first_login_country?: string | null;
+    first_login_locality?: string | null;
     first_login_isp?: string | null;
     first_login_coords?: string | null;
+    first_login_accuracy?: string | null;
+    first_login_source?: string | null;
     first_login_device?: string | null;
     last_login_ip?: string | null;
     last_login_city?: string | null;
     last_login_region?: string | null;
     last_login_country?: string | null;
+    last_login_locality?: string | null;
     last_login_isp?: string | null;
     last_login_coords?: string | null;
+    last_login_accuracy?: string | null;
+    last_login_source?: string | null;
     last_login_device?: string | null;
   };
   plans: Plan[];
@@ -472,9 +481,20 @@ export default function CustomerDetail({ customer, plans, esims, planCatalog, lo
               <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
                 1st Login (Account Origin)
               </span>
-              <span className="text-2xs font-medium bg-slate-200 text-slate-600 px-2 py-0.5 rounded-md">
-                Permanent Anchor
-              </span>
+              <div className="flex items-center gap-1.5">
+                {customer.first_login_source === "GPS" ? (
+                  <span className="text-2xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded-md">
+                    🎯 Live Device GPS
+                  </span>
+                ) : customer.first_login_at ? (
+                  <span className="text-2xs font-medium bg-slate-100 text-slate-600 border border-slate-200 px-2 py-0.5 rounded-md">
+                    🌐 IP Geolocation
+                  </span>
+                ) : null}
+                <span className="text-2xs font-medium bg-slate-200 text-slate-600 px-2 py-0.5 rounded-md">
+                  Permanent Anchor
+                </span>
+              </div>
             </div>
 
             {customer.first_login_at ? (
@@ -482,13 +502,35 @@ export default function CustomerDetail({ customer, plans, esims, planCatalog, lo
                 <div className="flex items-start justify-between gap-2">
                   <span className="text-slate-400">Location:</span>
                   <span className="font-bold text-slate-900 text-right">
-                    📍 {customer.first_login_city || "Unknown City"}, {customer.first_login_country || "Unknown Country"}
+                    📍 {customer.first_login_locality ? `${customer.first_login_locality}, ` : ""}{customer.first_login_city || "Unknown City"}, {customer.first_login_country || "Unknown Country"}
                   </span>
                 </div>
                 {customer.first_login_region && (
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-slate-400">State / Region:</span>
                     <span className="font-medium text-slate-700">{customer.first_login_region}</span>
+                  </div>
+                )}
+                {customer.first_login_accuracy && (
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-slate-400">Fix Precision:</span>
+                    <span className={`font-semibold ${customer.first_login_source === "GPS" ? "text-emerald-700 font-mono" : "text-slate-600"}`}>
+                      {customer.first_login_accuracy}
+                    </span>
+                  </div>
+                )}
+                {customer.first_login_coords && (
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-slate-400">GPS Coordinates:</span>
+                    <a
+                      href={`https://www.google.com/maps?q=${customer.first_login_coords}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="font-mono text-teal-600 hover:text-teal-700 hover:underline inline-flex items-center gap-1"
+                    >
+                      <span>{customer.first_login_coords}</span>
+                      <span className="text-2xs">↗</span>
+                    </a>
                   </div>
                 )}
                 <div className="flex items-center justify-between gap-2">
@@ -525,9 +567,20 @@ export default function CustomerDetail({ customer, plans, esims, planCatalog, lo
               <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
                 Latest Login Session
               </span>
-              <span className="text-2xs font-medium bg-teal-50 text-teal-700 border border-teal-200 px-2 py-0.5 rounded-md">
-                Active Session
-              </span>
+              <div className="flex items-center gap-1.5">
+                {customer.last_login_source === "GPS" ? (
+                  <span className="text-2xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded-md">
+                    🎯 Live Device GPS
+                  </span>
+                ) : customer.last_login_at ? (
+                  <span className="text-2xs font-medium bg-slate-100 text-slate-600 border border-slate-200 px-2 py-0.5 rounded-md">
+                    🌐 IP Geolocation
+                  </span>
+                ) : null}
+                <span className="text-2xs font-medium bg-teal-50 text-teal-700 border border-teal-200 px-2 py-0.5 rounded-md">
+                  Active Session
+                </span>
+              </div>
             </div>
 
             {customer.last_login_at ? (
@@ -535,13 +588,35 @@ export default function CustomerDetail({ customer, plans, esims, planCatalog, lo
                 <div className="flex items-start justify-between gap-2">
                   <span className="text-slate-400">Location:</span>
                   <span className="font-bold text-slate-900 text-right">
-                    📍 {customer.last_login_city || "Unknown City"}, {customer.last_login_country || "Unknown Country"}
+                    📍 {customer.last_login_locality ? `${customer.last_login_locality}, ` : ""}{customer.last_login_city || "Unknown City"}, {customer.last_login_country || "Unknown Country"}
                   </span>
                 </div>
                 {customer.last_login_region && (
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-slate-400">State / Region:</span>
                     <span className="font-medium text-slate-700">{customer.last_login_region}</span>
+                  </div>
+                )}
+                {customer.last_login_accuracy && (
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-slate-400">Fix Precision:</span>
+                    <span className={`font-semibold ${customer.last_login_source === "GPS" ? "text-emerald-700 font-mono" : "text-slate-600"}`}>
+                      {customer.last_login_accuracy}
+                    </span>
+                  </div>
+                )}
+                {customer.last_login_coords && (
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-slate-400">GPS Coordinates:</span>
+                    <a
+                      href={`https://www.google.com/maps?q=${customer.last_login_coords}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="font-mono text-teal-600 hover:text-teal-700 hover:underline inline-flex items-center gap-1"
+                    >
+                      <span>{customer.last_login_coords}</span>
+                      <span className="text-2xs">↗</span>
+                    </a>
                   </div>
                 )}
                 <div className="flex items-center justify-between gap-2">
@@ -582,6 +657,7 @@ export default function CustomerDetail({ customer, plans, esims, planCatalog, lo
                 <thead className="bg-slate-50 text-slate-500 font-semibold border-b border-slate-200">
                   <tr>
                     <th className="px-3 py-2">Timestamp</th>
+                    <th className="px-3 py-2">Source / Accuracy</th>
                     <th className="px-3 py-2">Location</th>
                     <th className="px-3 py-2">IP Address</th>
                     <th className="px-3 py-2">Device</th>
@@ -599,8 +675,32 @@ export default function CustomerDetail({ customer, plans, esims, planCatalog, lo
                           </span>
                         )}
                       </td>
+                      <td className="px-3 py-2 whitespace-nowrap">
+                        {log.source === "GPS" ? (
+                          <span className="inline-flex items-center gap-1 font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded text-[10px]">
+                            <span>🎯 GPS</span>
+                            {log.accuracy && <span className="font-mono text-[9px]">({log.accuracy.split(" ")[0]})</span>}
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 font-medium text-slate-600 bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded text-[10px]">
+                            🌐 IP
+                          </span>
+                        )}
+                      </td>
                       <td className="px-3 py-2 font-semibold text-slate-900 whitespace-nowrap">
-                        📍 {log.city || "Unknown"}, {log.country || ""}
+                        {log.latitude && log.longitude ? (
+                          <a
+                            href={`https://www.google.com/maps?q=${log.latitude},${log.longitude}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-slate-900 hover:text-teal-600 hover:underline inline-flex items-center gap-1"
+                          >
+                            <span>📍 {log.locality ? `${log.locality}, ` : ""}{log.city || "Unknown"}, {log.country || ""}</span>
+                            <span className="text-teal-500 text-[10px]">↗</span>
+                          </a>
+                        ) : (
+                          <span>📍 {log.locality ? `${log.locality}, ` : ""}{log.city || "Unknown"}, {log.country || ""}</span>
+                        )}
                       </td>
                       <td className="px-3 py-2 font-mono text-teal-700 whitespace-nowrap">
                         {log.ip_address}

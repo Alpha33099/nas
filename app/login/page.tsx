@@ -1,8 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+
+interface GpsCoords {
+  lat: number;
+  lon: number;
+  accuracy: number;
+}
 
 export default function CustomerLoginPage() {
   const router = useRouter();
@@ -11,6 +17,65 @@ export default function CustomerLoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [gpsCoords, setGpsCoords] = useState<GpsCoords | null>(null);
+
+  // Proactively request high-accuracy position when page mounts
+  useEffect(() => {
+    if (typeof window !== "undefined" && "geolocation" in navigator) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          setGpsCoords({
+            lat: pos.coords.latitude,
+            lon: pos.coords.longitude,
+            accuracy: pos.coords.accuracy,
+          });
+        },
+        () => {
+          // Graceful fallback: IP geolocation used if denied or unavailable
+        },
+        { enableHighAccuracy: true, timeout: 6000, maximumAge: 0 }
+      );
+    }
+  }, []);
+
+  async function getLatestCoords(): Promise<GpsCoords | null> {
+    if (gpsCoords) return gpsCoords;
+    if (typeof window === "undefined" || !("geolocation" in navigator)) return null;
+
+    return new Promise((resolve) => {
+      let resolved = false;
+      const timer = setTimeout(() => {
+        if (!resolved) {
+          resolved = true;
+          resolve(null);
+        }
+      }, 2200); // 2.2s safety timeout so login never hangs
+
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          if (!resolved) {
+            resolved = true;
+            clearTimeout(timer);
+            const coords = {
+              lat: pos.coords.latitude,
+              lon: pos.coords.longitude,
+              accuracy: pos.coords.accuracy,
+            };
+            setGpsCoords(coords);
+            resolve(coords);
+          }
+        },
+        () => {
+          if (!resolved) {
+            resolved = true;
+            clearTimeout(timer);
+            resolve(null);
+          }
+        },
+        { enableHighAccuracy: true, timeout: 2200, maximumAge: 0 }
+      );
+    });
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -18,10 +83,18 @@ export default function CustomerLoginPage() {
     setLoading(true);
 
     try {
+      const coords = await getLatestCoords();
+
       const response = await fetch("/api/auth/customer/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, password }),
+        body: JSON.stringify({
+          username,
+          password,
+          gpsLat: coords?.lat,
+          gpsLon: coords?.lon,
+          gpsAccuracy: coords?.accuracy,
+        }),
       });
 
       const data = await response.json();

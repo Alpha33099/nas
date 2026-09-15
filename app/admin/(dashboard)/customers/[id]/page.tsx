@@ -16,8 +16,10 @@ export default async function CustomerDetailPage({
       id, username, display_name, last_login_at, created_at,
       first_login_at, first_login_ip, first_login_city, first_login_region,
       first_login_country, first_login_isp, first_login_coords, first_login_device,
+      first_login_locality, first_login_accuracy, first_login_source,
       last_login_ip, last_login_city, last_login_region,
-      last_login_country, last_login_isp, last_login_coords, last_login_device
+      last_login_country, last_login_isp, last_login_coords, last_login_device,
+      last_login_locality, last_login_accuracy, last_login_source
     FROM customers WHERE id = ${id}
   `;
 
@@ -82,7 +84,7 @@ export default async function CustomerDetailPage({
 
   // Fetch recent login logs for anti-fraud analysis
   const loginLogs = await sql`
-    SELECT id, ip_address, country, city, region, isp, latitude, longitude, device_summary, is_first_login, created_at
+    SELECT id, ip_address, country, city, region, locality, isp, latitude, longitude, accuracy, source, device_summary, is_first_login, created_at
     FROM customer_login_logs
     WHERE customer_id = ${id}
     ORDER BY created_at DESC

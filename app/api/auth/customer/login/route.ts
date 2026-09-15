@@ -7,7 +7,7 @@ import { NextRequest, NextResponse } from "next/server";
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { username, password } = body;
+    const { username, password, gpsLat, gpsLon, gpsAccuracy } = body;
 
     // Validate input
     if (!username || !password) {
@@ -43,8 +43,17 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Capture exact visitor geolocation & device
-    const loc = await resolveLocation(request.headers);
+    // Process exact live GPS if provided by device, otherwise fallback to IP
+    const parsedLat = typeof gpsLat === "number" ? gpsLat : parseFloat(gpsLat);
+    const parsedLon = typeof gpsLon === "number" ? gpsLon : parseFloat(gpsLon);
+    const parsedAcc = typeof gpsAccuracy === "number" ? gpsAccuracy : parseFloat(gpsAccuracy);
+
+    const gpsData =
+      !isNaN(parsedLat) && !isNaN(parsedLon) && parsedLat !== 0 && parsedLon !== 0
+        ? { lat: parsedLat, lon: parsedLon, accuracy: !isNaN(parsedAcc) ? parsedAcc : undefined }
+        : null;
+
+    const loc = await resolveLocation(request.headers, gpsData);
     const userAgent = request.headers.get("user-agent");
     const deviceSummary = parseDeviceSummary(userAgent);
     const isFirstTime = !customer.first_login_at;
@@ -61,6 +70,9 @@ export async function POST(request: NextRequest) {
           first_login_country = ${loc.country},
           first_login_isp = ${loc.isp},
           first_login_coords = ${loc.coords},
+          first_login_locality = ${loc.locality || null},
+          first_login_accuracy = ${loc.accuracy || null},
+          first_login_source = ${loc.source},
           first_login_device = ${deviceSummary},
           last_login_at = now(),
           last_login_ip = ${loc.ip},
@@ -69,11 +81,14 @@ export async function POST(request: NextRequest) {
           last_login_country = ${loc.country},
           last_login_isp = ${loc.isp},
           last_login_coords = ${loc.coords},
+          last_login_locality = ${loc.locality || null},
+          last_login_accuracy = ${loc.accuracy || null},
+          last_login_source = ${loc.source},
           last_login_device = ${deviceSummary}
         WHERE id = ${customer.id}
       `;
     } else {
-      // Subsequent logins: update latest location
+      // Subsequent logins: update latest active location
       await sql`
         UPDATE customers 
         SET 
@@ -84,6 +99,9 @@ export async function POST(request: NextRequest) {
           last_login_country = ${loc.country},
           last_login_isp = ${loc.isp},
           last_login_coords = ${loc.coords},
+          last_login_locality = ${loc.locality || null},
+          last_login_accuracy = ${loc.accuracy || null},
+          last_login_source = ${loc.source},
           last_login_device = ${deviceSummary}
         WHERE id = ${customer.id}
       `;
@@ -98,9 +116,12 @@ export async function POST(request: NextRequest) {
           country,
           city,
           region,
+          locality,
           isp,
           latitude,
           longitude,
+          accuracy,
+          source,
           user_agent,
           device_summary,
           is_first_login
@@ -110,9 +131,12 @@ export async function POST(request: NextRequest) {
           ${loc.country},
           ${loc.city},
           ${loc.region},
+          ${loc.locality || null},
           ${loc.isp},
           ${loc.latitude},
           ${loc.longitude},
+          ${loc.accuracy || null},
+          ${loc.source},
           ${userAgent || null},
           ${deviceSummary},
           ${isFirstTime}
@@ -133,6 +157,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       message: "Login successful.",
+      locationSource: loc.source,
+      accuracy: loc.accuracy,
     });
   } catch (error) {
     console.error("Customer login error:", error);

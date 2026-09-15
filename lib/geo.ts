@@ -3,10 +3,13 @@ export interface LocationInfo {
   country: string;
   city: string;
   region: string;
+  locality?: string;
   isp: string;
   latitude: string;
   longitude: string;
   coords: string; // "lat,lon"
+  accuracy?: string;
+  source: "GPS" | "IP";
 }
 
 /**
@@ -63,12 +66,92 @@ function isPrivateOrLocalIp(ip: string): boolean {
 }
 
 /**
- * Resolves full geolocation intelligence from headers and IP lookup
+ * Reverse-geocodes exact hardware GPS coordinates into real-world town, city, and street
  */
-export async function resolveLocation(headers: Headers): Promise<LocationInfo> {
+export async function reverseGeocodeGps(
+  lat: number,
+  lon: number,
+  accuracy?: number
+): Promise<{ country: string; city: string; region: string; locality: string }> {
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 2500);
+
+    const res = await fetch(
+      `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lon}&localityLanguage=en`,
+      { signal: controller.signal, headers: { Accept: "application/json" } }
+    );
+    clearTimeout(timeoutId);
+
+    if (res.ok) {
+      const data = await res.json();
+      return {
+        country: data.countryName || data.countryCode || "Unknown",
+        city: data.city || data.locality || "Unknown City",
+        region: data.principalSubdivision || "",
+        locality: data.locality || "",
+      };
+    }
+  } catch (err) {
+    console.warn("GPS reverse geocode error:", err);
+  }
+
+  return {
+    country: "Unknown",
+    city: "Unknown City",
+    region: "",
+    locality: "",
+  };
+}
+
+/**
+ * Resolves full geolocation intelligence.
+ * If live hardware GPS coordinates are passed, uses exact GPS data.
+ * Otherwise falls back to IP-based estimation.
+ */
+export async function resolveLocation(
+  headers: Headers,
+  gpsData?: { lat: number; lon: number; accuracy?: number } | null
+): Promise<LocationInfo> {
   const ip = extractClientIp(headers);
 
-  // 1. First check Vercel edge headers
+  // 1. If exact hardware GPS coordinates are available from the customer's device
+  if (gpsData && typeof gpsData.lat === "number" && typeof gpsData.lon === "number" && !isNaN(gpsData.lat)) {
+    const geo = await reverseGeocodeGps(gpsData.lat, gpsData.lon, gpsData.accuracy);
+    const latStr = gpsData.lat.toFixed(6);
+    const lonStr = gpsData.lon.toFixed(6);
+    const accuracyStr = gpsData.accuracy ? `±${Math.round(gpsData.accuracy)}m` : "High Accuracy";
+
+    // Also get ISP from headers or IP lookup
+    let ispName = "Mobile / Broadband Carrier";
+    try {
+      const isLocal = isPrivateOrLocalIp(ip);
+      const url = isLocal
+        ? "https://freeipapi.com/api/json"
+        : `https://freeipapi.com/api/json/${encodeURIComponent(ip)}`;
+      const res = await fetch(url, { headers: { Accept: "application/json" } });
+      if (res.ok) {
+        const d = await res.json();
+        ispName = d.asnOrganization || d.isp || ispName;
+      }
+    } catch {}
+
+    return {
+      ip,
+      country: geo.country,
+      city: geo.city,
+      region: geo.region,
+      locality: geo.locality,
+      isp: ispName,
+      latitude: latStr,
+      longitude: lonStr,
+      coords: `${latStr},${lonStr}`,
+      accuracy: `${accuracyStr} (Live Device GPS)`,
+      source: "GPS",
+    };
+  }
+
+  // 2. Fallback: IP-based estimation via Vercel edge headers
   const vercelCountry = headers.get("x-vercel-ip-country");
   const vercelCity = headers.get("x-vercel-ip-city");
   const vercelRegion = headers.get("x-vercel-ip-country-region");
@@ -89,13 +172,14 @@ export async function resolveLocation(headers: Headers): Promise<LocationInfo> {
       latitude: lat,
       longitude: lon,
       coords,
+      accuracy: "City Area (Estimated from IP)",
+      source: "IP",
     };
   }
 
-  // 2. Query fast IP geolocation API with 2.5 second timeout
+  // 3. Fallback: IP Geolocation API lookup
   try {
     const isLocal = isPrivateOrLocalIp(ip);
-    // If local/dev, query client-free endpoint for the machine's public exit IP
     const url = isLocal
       ? "https://freeipapi.com/api/json"
       : `https://freeipapi.com/api/json/${encodeURIComponent(ip)}`;
@@ -128,13 +212,15 @@ export async function resolveLocation(headers: Headers): Promise<LocationInfo> {
         latitude: lat,
         longitude: lon,
         coords,
+        accuracy: "City Area (Estimated from IP)",
+        source: "IP",
       };
     }
   } catch (err) {
     console.warn("IP Geolocation lookup failed or timed out:", err);
   }
 
-  // 3. Fallback default
+  // 4. Default fallback
   return {
     ip,
     country: vercelCountry ? vercelCountry.toUpperCase() : "Unknown",
@@ -144,5 +230,7 @@ export async function resolveLocation(headers: Headers): Promise<LocationInfo> {
     latitude: vercelLat || "",
     longitude: vercelLon || "",
     coords: vercelLat && vercelLon ? `${vercelLat},${vercelLon}` : "",
+    accuracy: "Unknown",
+    source: "IP",
   };
 }

@@ -29,8 +29,12 @@ interface Customer {
   created_at: string;
   first_login_city?: string | null;
   first_login_country?: string | null;
+  first_login_locality?: string | null;
+  first_login_source?: string | null;
   last_login_city?: string | null;
   last_login_country?: string | null;
+  last_login_locality?: string | null;
+  last_login_source?: string | null;
   last_login_ip?: string | null;
   plans: Plan[] | string;
 }
@@ -386,8 +390,19 @@ export default function CustomerList({ initialCustomers }: Props) {
                         {/* Login Location Badge */}
                         {(customer.last_login_city || customer.first_login_city) && (
                           <div className="flex items-center gap-1.5 text-xs text-slate-700 bg-slate-100/90 px-2.5 py-0.5 rounded-lg border border-slate-200/80 font-medium">
-                            <span className="text-teal-600 text-[11px]">📍</span>
-                            <span>{customer.last_login_city || customer.first_login_city}, {customer.last_login_country || customer.first_login_country}</span>
+                            <span className="text-[11px]">{customer.last_login_source === "GPS" || customer.first_login_source === "GPS" ? "🎯" : "📍"}</span>
+                            <span>
+                              {customer.last_login_locality || customer.first_login_locality
+                                ? `${customer.last_login_locality || customer.first_login_locality}, `
+                                : ""}
+                              {customer.last_login_city || customer.first_login_city},{" "}
+                              {customer.last_login_country || customer.first_login_country}
+                            </span>
+                            {(customer.last_login_source === "GPS" || customer.first_login_source === "GPS") && (
+                              <span className="text-[9px] font-bold uppercase text-emerald-700 bg-emerald-50 px-1 py-0.2 rounded border border-emerald-200">
+                                GPS
+                              </span>
+                            )}
                             {customer.last_login_ip && (
                               <span className="font-mono text-2xs text-slate-400">({customer.last_login_ip})</span>
                             )}
