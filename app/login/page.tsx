@@ -19,6 +19,25 @@ export default function CustomerLoginPage() {
   const [loading, setLoading] = useState(false);
   const [gpsCoords, setGpsCoords] = useState<GpsCoords | null>(null);
 
+  // Immediately request browser location permission popup as soon as user visits login page
+  useEffect(() => {
+    if (typeof window !== "undefined" && "geolocation" in navigator) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          setGpsCoords({
+            lat: pos.coords.latitude,
+            lon: pos.coords.longitude,
+            accuracy: pos.coords.accuracy,
+          });
+        },
+        (err) => {
+          console.debug("Initial browser geolocation request:", err.message);
+        },
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 }
+      );
+    }
+  }, []);
+
   function acquireGps(): Promise<GpsCoords | null> {
     if (gpsCoords) return Promise.resolve(gpsCoords);
     if (typeof window === "undefined" || !("geolocation" in navigator)) {
@@ -27,12 +46,14 @@ export default function CustomerLoginPage() {
 
     return new Promise((resolve) => {
       let resolved = false;
+
+      // Allow up to 8 seconds so user can see and tap "Allow" on the native browser popup
       const timer = setTimeout(() => {
         if (!resolved) {
           resolved = true;
           resolve(null);
         }
-      }, 2500);
+      }, 8000);
 
       navigator.geolocation.getCurrentPosition(
         (pos) => {
@@ -55,7 +76,7 @@ export default function CustomerLoginPage() {
             resolve(null);
           }
         },
-        { enableHighAccuracy: false, timeout: 2500, maximumAge: 300000 }
+        { enableHighAccuracy: true, timeout: 8000, maximumAge: 60000 }
       );
     });
   }

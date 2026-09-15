@@ -26,10 +26,9 @@ export interface PlanItem {
 interface Props {
   plans: PlanItem[];
   username: string;
-  designatedPlace?: string | null;
 }
 
-export default function ActivePlanList({ plans, username, designatedPlace }: Props) {
+export default function ActivePlanList({ plans, username }: Props) {
   const router = useRouter();
   const [selectedPlan, setSelectedPlan] = useState<PlanItem | null>(null);
   const [copied, setCopied] = useState(false);
@@ -103,12 +102,6 @@ export default function ActivePlanList({ plans, username, designatedPlace }: Pro
                   </span>
                 </div>
                 <p className="text-xs text-slate-400 mt-0.5">High-Speed 4G / 5G Global Roaming</p>
-                {designatedPlace && (
-                  <p className="text-2xs text-teal-700 font-semibold flex items-center gap-1 mt-1">
-                    <span>📍</span>
-                    <span>Connected Destination: {designatedPlace}</span>
-                  </p>
-                )}
               </div>
 
               {/* Action Buttons: View Details + Top Up */}
@@ -290,9 +283,7 @@ export default function ActivePlanList({ plans, username, designatedPlace }: Pro
                 </div>
                 <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/80">
                   <span className="text-slate-400 block text-2xs font-medium">Network Coverage</span>
-                  <span className="font-bold text-slate-800 text-xs mt-0.5 block">
-                    {designatedPlace ? `${designatedPlace} (5G / 4G)` : "5G / 4G LTE Worldwide"}
-                  </span>
+                  <span className="font-bold text-slate-800 text-xs mt-0.5 block">5G / 4G LTE Worldwide</span>
                 </div>
               </div>
 
