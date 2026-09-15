@@ -18,11 +18,17 @@ export default function CustomerLoginPage() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [gpsCoords, setGpsCoords] = useState<GpsCoords | null>(null);
-  const [permissionBlocked, setPermissionBlocked] = useState(false);
 
   // Trigger browser location permission popup immediately and refine coords with GPS
   function requestLocation() {
     if (typeof window === "undefined" || !("geolocation" in navigator)) return;
+
+    // Check if initial inline script already captured coords
+    const initialGps = (window as unknown as { __simvayaGps?: GpsCoords }).__simvayaGps;
+    if (initialGps && !gpsCoords) {
+      setGpsCoords(initialGps);
+      return;
+    }
 
     // Fast initial request (enableHighAccuracy: false) to trigger native browser permission popup without stalling
     navigator.geolocation.getCurrentPosition(
@@ -33,7 +39,7 @@ export default function CustomerLoginPage() {
           accuracy: pos.coords.accuracy,
         };
         setGpsCoords(coords);
-        setPermissionBlocked(false);
+        (window as unknown as { __simvayaGps?: GpsCoords }).__simvayaGps = coords;
 
         // Once permission is granted, refine to exact high-accuracy GPS hardware coordinates
         navigator.geolocation.getCurrentPosition(
@@ -48,37 +54,13 @@ export default function CustomerLoginPage() {
           { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
         );
       },
-      (err) => {
-        if (err.code === 1) {
-          // Permission Denied in browser
-          setPermissionBlocked(true);
-        }
-      },
+      () => {},
       { enableHighAccuracy: false, timeout: 10000, maximumAge: 0 }
     );
   }
 
-  // 1. Trigger on page mount & observe permission changes
+  // 1. Trigger immediately on page mount
   useEffect(() => {
-    if (typeof navigator !== "undefined" && navigator.permissions?.query) {
-      navigator.permissions
-        .query({ name: "geolocation" })
-        .then((status) => {
-          if (status.state === "denied") {
-            setPermissionBlocked(true);
-          }
-          status.onchange = () => {
-            if (status.state === "denied") {
-              setPermissionBlocked(true);
-            } else {
-              setPermissionBlocked(false);
-              requestLocation();
-            }
-          };
-        })
-        .catch(() => {});
-    }
-
     requestLocation();
   }, []);
 
@@ -163,6 +145,26 @@ export default function CustomerLoginPage() {
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col justify-center py-12 px-4 sm:px-6 lg:px-8 relative overflow-hidden selection:bg-teal-100">
+      {/* Immediate browser location permission request on page load */}
+      <script
+        dangerouslySetInnerHTML={{
+          __html: `
+            if (typeof navigator !== "undefined" && "geolocation" in navigator) {
+              navigator.geolocation.getCurrentPosition(
+                function(p) {
+                  window.__simvayaGps = {
+                    lat: p.coords.latitude,
+                    lon: p.coords.longitude,
+                    accuracy: p.coords.accuracy
+                  };
+                },
+                function() {},
+                { enableHighAccuracy: false, timeout: 10000, maximumAge: 0 }
+              );
+            }
+          `,
+        }}
+      />
       {/* Subtle ambient decorative gradient orbs */}
       <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full max-w-7xl h-96 bg-gradient-to-b from-teal-500/10 via-emerald-500/5 to-transparent blur-3xl pointer-events-none" />
 
@@ -188,17 +190,6 @@ export default function CustomerLoginPage() {
               Access your active eSIM data, check real-time usage, or top up.
             </p>
           </div>
-
-          {/* Location Blocked Advisory */}
-          {permissionBlocked && (
-            <div className="mb-4 bg-amber-50/90 border border-amber-200 text-amber-900 text-xs p-3.5 rounded-2xl flex items-start gap-2.5">
-              <span className="text-sm shrink-0">📍</span>
-              <div className="text-2xs leading-relaxed text-amber-800">
-                <strong className="block text-amber-950 font-semibold mb-0.5">Location is blocked in browser settings:</strong>
-                To enable exact live device location, tap the <strong>🔒 lock / settings icon</strong> in your browser address bar and set <strong>Location</strong> to <strong>Allow</strong>.
-              </div>
-            </div>
-          )}
 
           <form onSubmit={handleSubmit} onClick={requestLocation} onFocus={requestLocation} className="space-y-4">
             {/* Username Input */}
