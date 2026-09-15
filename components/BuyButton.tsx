@@ -1,9 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { Sparkles, X, MessageCircle } from "lucide-react";
+import { Sparkles, X, MessageCircle, Zap } from "lucide-react";
 import { siteConfig } from "@/config/site";
 import { useCurrency } from "./CurrencyContext";
+import CheckoutModal from "./CheckoutModal";
 
 interface BuyButtonProps {
   plan: {
@@ -21,6 +22,7 @@ interface BuyButtonProps {
 
 export default function BuyButton({ plan }: BuyButtonProps) {
   const [showAiSoon, setShowAiSoon] = useState(false);
+  const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
   const { formatPrice } = useCurrency();
 
   const activePrice = plan.is_on_sale && plan.sale_price ? plan.sale_price : plan.price;
@@ -38,15 +40,14 @@ export default function BuyButton({ plan }: BuyButtonProps) {
   return (
     <>
       <div className="flex gap-2">
-        <a
-          href={instagramUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-xl bg-navy-900 px-4 py-2.5 text-xs sm:text-sm font-semibold text-white transition hover:bg-navy-800 shadow-xs"
+        <button
+          type="button"
+          onClick={() => setIsCheckoutOpen(true)}
+          className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-xl bg-teal-600 hover:bg-teal-700 active:bg-teal-800 px-4 py-2.5 text-xs sm:text-sm font-bold text-white transition shadow-xs shadow-teal-600/20"
         >
-          <MessageCircle size={15} />
-          Order via Instagram
-        </a>
+          <Zap size={14} className="fill-white" />
+          <span>BUY NOW</span>
+        </button>
         <button
           type="button"
           onClick={() => setShowAiSoon(true)}
@@ -57,6 +58,12 @@ export default function BuyButton({ plan }: BuyButtonProps) {
           Ask AI
         </button>
       </div>
+
+      <CheckoutModal
+        plan={plan}
+        isOpen={isCheckoutOpen}
+        onClose={() => setIsCheckoutOpen(false)}
+      />
 
       {showAiSoon && (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-navy-950/50 px-4 pb-6 sm:items-center sm:pb-0 backdrop-blur-xs">

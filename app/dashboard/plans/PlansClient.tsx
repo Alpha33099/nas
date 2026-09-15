@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo, useRef, useEffect } from "react";
+import CheckoutModal from "@/components/CheckoutModal";
 
 interface Plan {
   id: string;
@@ -28,6 +29,7 @@ export default function PlansClient({ plans }: Props) {
 
   // Modal state
   const [selectedPlan, setSelectedPlan] = useState<Plan | null>(null);
+  const [checkoutPlan, setCheckoutPlan] = useState<Plan | null>(null);
 
   // Toast state
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -377,15 +379,15 @@ export default function PlansClient({ plans }: Props) {
 
                 <button
                   type="button"
-                  onClick={() => handleBuy(plan)}
+                  onClick={() => setCheckoutPlan(plan)}
                   className={`flex-1 min-h-[44px] px-4 py-2 rounded-xl text-white text-xs font-bold transition-all shadow-xs text-center flex items-center justify-center gap-1.5 ${
                     isPopular
                       ? "bg-teal-600 hover:bg-teal-700 active:bg-teal-800"
                       : "bg-slate-900 hover:bg-teal-600 active:bg-teal-700"
                   }`}
                 >
-                  <span>Buy on IG</span>
-                  <span className="text-sm">↗</span>
+                  <span>BUY NOW</span>
+                  <span className="text-teal-200">⚡</span>
                 </button>
               </div>
             </div>
@@ -465,12 +467,12 @@ export default function PlansClient({ plans }: Props) {
                 onClick={() => {
                   const p = selectedPlan;
                   setSelectedPlan(null);
-                  handleBuy(p);
+                  if (p) setCheckoutPlan(p);
                 }}
                 className="flex-1 min-h-[44px] py-2.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold shadow-xs transition-colors flex items-center justify-center gap-1.5"
               >
-                <span>Buy on IG</span>
-                <span className="text-sm">↗</span>
+                <span>BUY NOW</span>
+                <span className="text-teal-200">⚡</span>
               </button>
             </div>
           </div>
@@ -603,6 +605,24 @@ export default function PlansClient({ plans }: Props) {
           </div>
         )}
       </div>
+
+      {checkoutPlan && (
+        <CheckoutModal
+          plan={{
+            id: checkoutPlan.id,
+            name: checkoutPlan.name,
+            price: checkoutPlan.price,
+            sale_price: checkoutPlan.sale_price,
+            is_on_sale: checkoutPlan.is_on_sale,
+            data: `${checkoutPlan.data_amount_gb} GB`,
+            validity: `${checkoutPlan.validity_days} Days`,
+            instagram_message: checkoutPlan.instagram_message,
+          }}
+          isOpen={Boolean(checkoutPlan)}
+          onClose={() => setCheckoutPlan(null)}
+          isCustomerLoggedIn={true}
+        />
+      )}
     </div>
   );
 }
