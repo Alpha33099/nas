@@ -26,52 +26,23 @@ export interface PlanItem {
 interface Props {
   plans: PlanItem[];
   username: string;
-  ipLocation?: string | null;
 }
 
-export default function ActivePlanList({ plans, username, ipLocation }: Props) {
+export default function ActivePlanList({ plans, username }: Props) {
   const router = useRouter();
   const [selectedPlan, setSelectedPlan] = useState<PlanItem | null>(null);
   const [copied, setCopied] = useState(false);
 
   // Periodically refresh usage every 60s so customer sees live increments throughout the day
   useEffect(() => {
-    requestDeviceLocation();
     const timer = setInterval(() => {
       router.refresh();
     }, 60000);
     return () => clearInterval(timer);
   }, [router]);
 
-  // Silently refresh exact live device GPS coordinates in the background
-  function requestDeviceLocation() {
-    if (typeof window === "undefined" || !("geolocation" in navigator)) {
-      return;
-    }
-
-    navigator.geolocation.getCurrentPosition(
-      async (pos) => {
-        try {
-          await fetch("/api/customer/location", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              gpsLat: pos.coords.latitude,
-              gpsLon: pos.coords.longitude,
-              gpsAccuracy: pos.coords.accuracy,
-            }),
-          });
-        } catch {}
-      },
-      () => {},
-      { enableHighAccuracy: true, timeout: 8000, maximumAge: 60000 }
-    );
-  }
-
   function handleOpenDetails(plan: PlanItem) {
     setSelectedPlan(plan);
-    // Request hardware GPS directly on user click
-    requestDeviceLocation();
   }
 
   async function handleCopy(text: string) {
@@ -104,12 +75,6 @@ export default function ActivePlanList({ plans, username, ipLocation }: Props) {
                   </span>
                 </div>
                 <p className="text-xs text-slate-400 mt-0.5">High-Speed 4G / 5G Global Roaming</p>
-                {ipLocation && (
-                  <p className="text-2xs text-teal-700 font-semibold flex items-center gap-1 mt-1">
-                    <span>📍</span>
-                    <span>Connected Destination: {ipLocation}</span>
-                  </p>
-                )}
               </div>
 
               {/* Action Buttons: View Details + Top Up */}
@@ -292,7 +257,7 @@ export default function ActivePlanList({ plans, username, ipLocation }: Props) {
                 <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/80">
                   <span className="text-slate-400 block text-2xs font-medium">Network Coverage</span>
                   <span className="font-bold text-slate-800 text-xs mt-0.5 block">
-                    {ipLocation ? `${ipLocation} (5G / 4G)` : "5G / 4G LTE Worldwide"}
+                    5G / 4G LTE Worldwide
                   </span>
                 </div>
               </div>
