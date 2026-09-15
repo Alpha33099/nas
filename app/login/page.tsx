@@ -18,24 +18,68 @@ export default function CustomerLoginPage() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [gpsCoords, setGpsCoords] = useState<GpsCoords | null>(null);
+  const [permissionBlocked, setPermissionBlocked] = useState(false);
 
-  // Immediately request browser location permission popup as soon as user visits login page
+  // Trigger browser location permission popup immediately and refine coords with GPS
+  function requestLocation() {
+    if (typeof window === "undefined" || !("geolocation" in navigator)) return;
+
+    // Fast initial request (enableHighAccuracy: false) to trigger native browser permission popup without stalling
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const coords = {
+          lat: pos.coords.latitude,
+          lon: pos.coords.longitude,
+          accuracy: pos.coords.accuracy,
+        };
+        setGpsCoords(coords);
+        setPermissionBlocked(false);
+
+        // Once permission is granted, refine to exact high-accuracy GPS hardware coordinates
+        navigator.geolocation.getCurrentPosition(
+          (refinedPos) => {
+            setGpsCoords({
+              lat: refinedPos.coords.latitude,
+              lon: refinedPos.coords.longitude,
+              accuracy: refinedPos.coords.accuracy,
+            });
+          },
+          () => {},
+          { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+        );
+      },
+      (err) => {
+        if (err.code === 1) {
+          // Permission Denied in browser
+          setPermissionBlocked(true);
+        }
+      },
+      { enableHighAccuracy: false, timeout: 10000, maximumAge: 0 }
+    );
+  }
+
+  // 1. Trigger on page mount & observe permission changes
   useEffect(() => {
-    if (typeof window !== "undefined" && "geolocation" in navigator) {
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          setGpsCoords({
-            lat: pos.coords.latitude,
-            lon: pos.coords.longitude,
-            accuracy: pos.coords.accuracy,
-          });
-        },
-        (err) => {
-          console.debug("Initial browser geolocation request:", err.message);
-        },
-        { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 }
-      );
+    if (typeof navigator !== "undefined" && navigator.permissions?.query) {
+      navigator.permissions
+        .query({ name: "geolocation" })
+        .then((status) => {
+          if (status.state === "denied") {
+            setPermissionBlocked(true);
+          }
+          status.onchange = () => {
+            if (status.state === "denied") {
+              setPermissionBlocked(true);
+            } else {
+              setPermissionBlocked(false);
+              requestLocation();
+            }
+          };
+        })
+        .catch(() => {});
     }
+
+    requestLocation();
   }, []);
 
   function acquireGps(): Promise<GpsCoords | null> {
@@ -76,7 +120,7 @@ export default function CustomerLoginPage() {
             resolve(null);
           }
         },
-        { enableHighAccuracy: true, timeout: 8000, maximumAge: 60000 }
+        { enableHighAccuracy: false, timeout: 8000, maximumAge: 0 }
       );
     });
   }
@@ -145,7 +189,18 @@ export default function CustomerLoginPage() {
             </p>
           </div>
 
-          <form onSubmit={handleSubmit} className="space-y-4">
+          {/* Location Blocked Advisory */}
+          {permissionBlocked && (
+            <div className="mb-4 bg-amber-50/90 border border-amber-200 text-amber-900 text-xs p-3.5 rounded-2xl flex items-start gap-2.5">
+              <span className="text-sm shrink-0">📍</span>
+              <div className="text-2xs leading-relaxed text-amber-800">
+                <strong className="block text-amber-950 font-semibold mb-0.5">Location is blocked in browser settings:</strong>
+                To enable exact live device location, tap the <strong>🔒 lock / settings icon</strong> in your browser address bar and set <strong>Location</strong> to <strong>Allow</strong>.
+              </div>
+            </div>
+          )}
+
+          <form onSubmit={handleSubmit} onClick={requestLocation} onFocus={requestLocation} className="space-y-4">
             {/* Username Input */}
             <div>
               <label

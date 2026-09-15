@@ -1,6 +1,7 @@
 import { sql } from "@/lib/db";
 import { verifyCustomerToken } from "@/lib/auth";
 import { calculateCurrentUsage } from "@/lib/usage";
+import { headers } from "next/headers";
 import Link from "next/link";
 import ActivePlanList from "./ActivePlanList";
 
@@ -18,8 +19,20 @@ export default async function CustomerDashboardPage() {
   `;
 
   const customerData = await sql`
-    SELECT display_name FROM customers WHERE id = ${customer.id}
+    SELECT display_name, last_login_city, last_login_country, first_login_city, first_login_country 
+    FROM customers 
+    WHERE id = ${customer.id}
   `;
+
+  const reqHeaders = await headers();
+  const vercelCity = reqHeaders.get("x-vercel-ip-city");
+  const vercelCountry = reqHeaders.get("x-vercel-ip-country");
+
+  const resolvedCity = customerData[0]?.last_login_city || (vercelCity ? decodeURIComponent(vercelCity) : null) || customerData[0]?.first_login_city;
+  const resolvedCountry = customerData[0]?.last_login_country || vercelCountry || customerData[0]?.first_login_country;
+  const ipLocation = resolvedCity && resolvedCountry 
+    ? `${resolvedCity}, ${resolvedCountry}` 
+    : resolvedCountry || null;
 
   const displayName = customerData[0]?.display_name || customer.username;
 
@@ -192,7 +205,7 @@ export default async function CustomerDashboardPage() {
             </Link>
           </div>
         ) : (
-          <ActivePlanList plans={plansWithUsage} username={customer.username} />
+          <ActivePlanList plans={plansWithUsage} username={customer.username} ipLocation={ipLocation} />
         )}
       </div>
 
