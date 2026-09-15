@@ -38,6 +38,20 @@ interface CatalogPlan {
   validity_days: number;
 }
 
+interface LoginLog {
+  id: string;
+  ip_address: string;
+  country: string;
+  city: string;
+  region: string;
+  isp: string;
+  latitude: string;
+  longitude: string;
+  device_summary: string;
+  is_first_login: boolean;
+  created_at: string;
+}
+
 interface Props {
   customer: {
     id: string;
@@ -45,10 +59,26 @@ interface Props {
     display_name: string;
     last_login_at: string | null;
     created_at: string;
+    first_login_at?: string | null;
+    first_login_ip?: string | null;
+    first_login_city?: string | null;
+    first_login_region?: string | null;
+    first_login_country?: string | null;
+    first_login_isp?: string | null;
+    first_login_coords?: string | null;
+    first_login_device?: string | null;
+    last_login_ip?: string | null;
+    last_login_city?: string | null;
+    last_login_region?: string | null;
+    last_login_country?: string | null;
+    last_login_isp?: string | null;
+    last_login_coords?: string | null;
+    last_login_device?: string | null;
   };
   plans: Plan[];
   esims: Esim[];
   planCatalog: CatalogPlan[];
+  loginLogs?: LoginLog[];
 }
 
 function generatePassword(): string {
@@ -58,7 +88,7 @@ function generatePassword(): string {
   return Array.from(array, (byte) => chars[byte % chars.length]).join("");
 }
 
-export default function CustomerDetail({ customer, plans, esims, planCatalog }: Props) {
+export default function CustomerDetail({ customer, plans, esims, planCatalog, loginLogs = [] }: Props) {
   const router = useRouter();
 
   // Password reset state
@@ -387,6 +417,204 @@ export default function CustomerDetail({ customer, plans, esims, planCatalog }: 
               <p className="font-mono text-sm font-bold text-slate-800 break-all select-all">
                 {newPassword}
               </p>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* ── Security & Location Intelligence (Anti-Fraud) ── */}
+      <div className="bg-white rounded-2xl border border-slate-200/90 p-5 sm:p-6 shadow-2xs space-y-5">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-4">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-lg bg-teal-50 flex items-center justify-center text-teal-600 border border-teal-200/60 shrink-0">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+            </div>
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="text-sm font-bold text-slate-900">Location & Anti-Fraud Intelligence</h2>
+                {customer.first_login_country && customer.last_login_country && (
+                  customer.first_login_country === customer.last_login_country ? (
+                    <span className="text-2xs font-semibold px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200">
+                      ✓ Location Consistent
+                    </span>
+                  ) : (
+                    <span className="text-2xs font-bold px-2 py-0.5 rounded-md bg-amber-50 text-amber-700 border border-amber-200">
+                      ⚠️ Location Shift Detected
+                    </span>
+                  )
+                )}
+              </div>
+              <p className="text-2xs text-slate-400">Verifies subscriber origin, login IP address, network carrier, and geolocation</p>
+            </div>
+          </div>
+
+          {(customer.last_login_coords || customer.first_login_coords) && (
+            <a
+              href={`https://www.google.com/maps?q=${customer.last_login_coords || customer.first_login_coords}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-xl transition-colors border border-slate-200 self-start sm:self-auto"
+            >
+              <span>View on Google Maps</span>
+              <span className="text-teal-600">↗</span>
+            </a>
+          )}
+        </div>
+
+        {/* 2-Column Comparison: First Login vs Latest Login */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* First Login (Origin Anchor) */}
+          <div className="rounded-xl border border-slate-200/80 bg-slate-50/50 p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                1st Login (Account Origin)
+              </span>
+              <span className="text-2xs font-medium bg-slate-200 text-slate-600 px-2 py-0.5 rounded-md">
+                Permanent Anchor
+              </span>
+            </div>
+
+            {customer.first_login_at ? (
+              <div className="space-y-2 text-xs">
+                <div className="flex items-start justify-between gap-2">
+                  <span className="text-slate-400">Location:</span>
+                  <span className="font-bold text-slate-900 text-right">
+                    📍 {customer.first_login_city || "Unknown City"}, {customer.first_login_country || "Unknown Country"}
+                  </span>
+                </div>
+                {customer.first_login_region && (
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-slate-400">State / Region:</span>
+                    <span className="font-medium text-slate-700">{customer.first_login_region}</span>
+                  </div>
+                )}
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-slate-400">IP Address:</span>
+                  <span className="font-mono font-semibold text-teal-700 bg-teal-50 px-1.5 py-0.5 rounded border border-teal-100">
+                    {customer.first_login_ip || "N/A"}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-slate-400">Carrier / ISP:</span>
+                  <span className="font-medium text-slate-700 text-right truncate max-w-[200px]" title={customer.first_login_isp || ""}>
+                    {customer.first_login_isp || "N/A"}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-slate-400">Device:</span>
+                  <span className="font-medium text-slate-700">{customer.first_login_device || "N/A"}</span>
+                </div>
+                <div className="flex items-center justify-between gap-2 border-t border-slate-200/60 pt-1.5 text-2xs text-slate-400">
+                  <span>First Login Time:</span>
+                  <span>{new Date(customer.first_login_at).toLocaleString()}</span>
+                </div>
+              </div>
+            ) : (
+              <div className="py-6 text-center text-xs text-slate-400">
+                <span>Customer has not logged in yet. Location will anchor upon first login.</span>
+              </div>
+            )}
+          </div>
+
+          {/* Latest Login (Active) */}
+          <div className="rounded-xl border border-slate-200/80 bg-slate-50/50 p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                Latest Login Session
+              </span>
+              <span className="text-2xs font-medium bg-teal-50 text-teal-700 border border-teal-200 px-2 py-0.5 rounded-md">
+                Active Session
+              </span>
+            </div>
+
+            {customer.last_login_at ? (
+              <div className="space-y-2 text-xs">
+                <div className="flex items-start justify-between gap-2">
+                  <span className="text-slate-400">Location:</span>
+                  <span className="font-bold text-slate-900 text-right">
+                    📍 {customer.last_login_city || "Unknown City"}, {customer.last_login_country || "Unknown Country"}
+                  </span>
+                </div>
+                {customer.last_login_region && (
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-slate-400">State / Region:</span>
+                    <span className="font-medium text-slate-700">{customer.last_login_region}</span>
+                  </div>
+                )}
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-slate-400">IP Address:</span>
+                  <span className="font-mono font-semibold text-teal-700 bg-teal-50 px-1.5 py-0.5 rounded border border-teal-100">
+                    {customer.last_login_ip || "N/A"}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-slate-400">Carrier / ISP:</span>
+                  <span className="font-medium text-slate-700 text-right truncate max-w-[200px]" title={customer.last_login_isp || ""}>
+                    {customer.last_login_isp || "N/A"}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-slate-400">Device:</span>
+                  <span className="font-medium text-slate-700">{customer.last_login_device || "N/A"}</span>
+                </div>
+                <div className="flex items-center justify-between gap-2 border-t border-slate-200/60 pt-1.5 text-2xs text-slate-400">
+                  <span>Last Login Time:</span>
+                  <span>{new Date(customer.last_login_at).toLocaleString()}</span>
+                </div>
+              </div>
+            ) : (
+              <div className="py-6 text-center text-xs text-slate-400">
+                <span>No active login recorded yet.</span>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Audit Log Trail (if any) */}
+        {loginLogs && loginLogs.length > 0 && (
+          <div className="border-t border-slate-100 pt-4">
+            <h3 className="text-xs font-bold text-slate-800 mb-2">Recent Session History</h3>
+            <div className="overflow-x-auto rounded-xl border border-slate-200">
+              <table className="w-full text-left text-2xs">
+                <thead className="bg-slate-50 text-slate-500 font-semibold border-b border-slate-200">
+                  <tr>
+                    <th className="px-3 py-2">Timestamp</th>
+                    <th className="px-3 py-2">Location</th>
+                    <th className="px-3 py-2">IP Address</th>
+                    <th className="px-3 py-2">Device</th>
+                    <th className="px-3 py-2">Carrier / ISP</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 text-slate-700 font-medium">
+                  {loginLogs.map((log) => (
+                    <tr key={log.id} className="hover:bg-slate-50/50">
+                      <td className="px-3 py-2 text-slate-500 whitespace-nowrap">
+                        {new Date(log.created_at).toLocaleString()}
+                        {log.is_first_login && (
+                          <span className="ml-1.5 text-[9px] font-bold uppercase bg-teal-50 text-teal-700 border border-teal-200 px-1 py-0.2 rounded">
+                            First
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2 font-semibold text-slate-900 whitespace-nowrap">
+                        📍 {log.city || "Unknown"}, {log.country || ""}
+                      </td>
+                      <td className="px-3 py-2 font-mono text-teal-700 whitespace-nowrap">
+                        {log.ip_address}
+                      </td>
+                      <td className="px-3 py-2 text-slate-600 whitespace-nowrap">
+                        {log.device_summary || "Unknown"}
+                      </td>
+                      <td className="px-3 py-2 text-slate-500 truncate max-w-[140px]">
+                        {log.isp || "—"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </div>
         )}

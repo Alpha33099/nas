@@ -10,9 +10,14 @@ export default async function CustomerDetailPage({
 }) {
   const { id } = await params;
 
-  // Fetch customer
+  // Fetch customer with location intelligence
   const customers = await sql`
-    SELECT id, username, display_name, last_login_at, created_at
+    SELECT 
+      id, username, display_name, last_login_at, created_at,
+      first_login_at, first_login_ip, first_login_city, first_login_region,
+      first_login_country, first_login_isp, first_login_coords, first_login_device,
+      last_login_ip, last_login_city, last_login_region,
+      last_login_country, last_login_isp, last_login_coords, last_login_device
     FROM customers WHERE id = ${id}
   `;
 
@@ -75,6 +80,15 @@ export default async function CustomerDetailPage({
     ORDER BY data_amount_gb ASC
   `;
 
+  // Fetch recent login logs for anti-fraud analysis
+  const loginLogs = await sql`
+    SELECT id, ip_address, country, city, region, isp, latitude, longitude, device_summary, is_first_login, created_at
+    FROM customer_login_logs
+    WHERE customer_id = ${id}
+    ORDER BY created_at DESC
+    LIMIT 8
+  `;
+
   return (
     <div>
       <CustomerDetail
@@ -82,6 +96,7 @@ export default async function CustomerDetailPage({
         plans={plans as any}
         esims={decryptedEsims as any}
         planCatalog={planCatalog as any}
+        loginLogs={loginLogs as any}
       />
     </div>
   );

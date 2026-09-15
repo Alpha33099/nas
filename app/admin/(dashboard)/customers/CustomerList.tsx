@@ -27,6 +27,11 @@ interface Customer {
   display_name: string;
   last_login_at: string | null;
   created_at: string;
+  first_login_city?: string | null;
+  first_login_country?: string | null;
+  last_login_city?: string | null;
+  last_login_country?: string | null;
+  last_login_ip?: string | null;
   plans: Plan[] | string;
 }
 
@@ -377,6 +382,17 @@ export default function CustomerList({ initialCustomers }: Props) {
                             {customer.last_login_at ? formatDate(customer.last_login_at) : "Never"}
                           </span>
                         </div>
+
+                        {/* Login Location Badge */}
+                        {(customer.last_login_city || customer.first_login_city) && (
+                          <div className="flex items-center gap-1.5 text-xs text-slate-700 bg-slate-100/90 px-2.5 py-0.5 rounded-lg border border-slate-200/80 font-medium">
+                            <span className="text-teal-600 text-[11px]">📍</span>
+                            <span>{customer.last_login_city || customer.first_login_city}, {customer.last_login_country || customer.first_login_country}</span>
+                            {customer.last_login_ip && (
+                              <span className="font-mono text-2xs text-slate-400">({customer.last_login_ip})</span>
+                            )}
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
