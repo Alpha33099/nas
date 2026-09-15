@@ -582,7 +582,7 @@ export default function CustomerDetail({ customer, plans, esims, planCatalog, lo
         ) : (
           <div className="space-y-4">
             {activePlans.map((plan) => {
-              const usage = calculateCurrentUsage(plan);
+              const usage = calculateCurrentUsage(plan, expiredPlans);
               const usagePercent = usage.percentUsed;
               const isHigh = usagePercent >= 80;
               const currentValue = usageValues[plan.id] ?? String(plan.manual_used_gb ?? plan.used_gb ?? "0");
@@ -637,9 +637,15 @@ export default function CustomerDetail({ customer, plans, esims, planCatalog, lo
                           <span className="text-slate-400"> (set {new Date(plan.manual_updated_at).toLocaleDateString()})</span>
                         )}
                       </div>
-                      <div>
+                      <div className="flex flex-wrap items-center gap-1.5">
                         <span className="text-slate-400">Auto-Rate: </span>
                         <span className="font-semibold text-teal-700 font-mono">~{usage.dailyRate.toFixed(2)} GB/day</span>
+                        <span className="text-slate-400 text-3xs">(+{usage.incrementPer3MinMb} MB / 3 min)</span>
+                        {usage.rateSource === "expired_history" && (
+                          <span className="text-[10px] font-semibold bg-purple-50 text-purple-700 border border-purple-200 px-1.5 py-0.2 rounded">
+                            Expired History
+                          </span>
+                        )}
                         {usage.additionalGb > 0 && (
                           <span className="text-slate-400"> (+{usage.additionalGb.toFixed(2)} GB auto-accumulated)</span>
                         )}

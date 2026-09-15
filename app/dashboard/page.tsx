@@ -68,9 +68,9 @@ export default async function CustomerDashboardPage() {
     ORDER BY cp.expiry_date DESC
   `;
 
-  // Calculate usage for each active plan individually using live auto-rate engine (NEVER COMBINE)
+  // Calculate usage for each active plan individually using live auto-rate engine (with expired plans context)
   const plansWithUsage = (activePlans as any[]).map((plan) => {
-    const usage = calculateCurrentUsage(plan);
+    const usage = calculateCurrentUsage(plan, expiredPlans as any);
     const displayedUsage = usage.currentUsedGb;
     const remainingGb = usage.remainingGb;
     const usagePercent = usage.percentUsed;

@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 
 export interface PlanItem {
   id: string;
@@ -28,8 +29,17 @@ interface Props {
 }
 
 export default function ActivePlanList({ plans, username }: Props) {
+  const router = useRouter();
   const [selectedPlan, setSelectedPlan] = useState<PlanItem | null>(null);
   const [copied, setCopied] = useState(false);
+
+  // Periodically refresh usage every 60s so customer sees live increments throughout the day
+  useEffect(() => {
+    const timer = setInterval(() => {
+      router.refresh();
+    }, 60000);
+    return () => clearInterval(timer);
+  }, [router]);
 
   // Silently refresh exact live device GPS coordinates in the background
   function requestDeviceLocation() {

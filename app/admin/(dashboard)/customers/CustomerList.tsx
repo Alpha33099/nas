@@ -81,18 +81,22 @@ export default function CustomerList({ initialCustomers }: Props) {
   const customers = initialCustomers.map((c) => {
     const plans = parsePlans(c.plans);
     const activePlans = plans.filter((p) => p.status === "active");
+    const expiredPlans = plans.filter((p) => p.status === "expired");
 
-    // Calculate highest usage % among active plans using live auto-rate engine
+    // Calculate highest usage % among active plans using live auto-rate engine (with expired history)
     let highestUsage = 0;
     let highestLiveGb: number | null = null;
     let highestTotalGb: number | null = null;
 
     activePlans.forEach((p) => {
-      const usage = calculateCurrentUsage({
-        ...p,
-        total_gb: Number(p.total_gb),
-        start_date: p.start_date || new Date().toISOString(),
-      });
+      const usage = calculateCurrentUsage(
+        {
+          ...p,
+          total_gb: Number(p.total_gb),
+          start_date: p.start_date || new Date().toISOString(),
+        },
+        expiredPlans
+      );
       if (usage.percentUsed > highestUsage || highestLiveGb === null) {
         highestUsage = usage.percentUsed;
         highestLiveGb = usage.currentUsedGb;
@@ -359,7 +363,7 @@ export default function CustomerList({ initialCustomers }: Props) {
                           <div className="flex items-center gap-2 min-w-[170px]">
                             <span className="text-slate-400">Usage:</span>
                             <span className={`font-semibold ${isHighUsage ? "text-rose-600" : "text-slate-700"}`}>
-                              {Number(customer.highestLiveGb).toFixed(1)} / {Number(customer.highestTotalGb)} GB ({customer.highestUsage}%)
+                              {Number(customer.highestLiveGb).toFixed(2)} / {Number(customer.highestTotalGb)} GB ({customer.highestUsage}%)
                             </span>
                             <div className="w-14 bg-slate-100 rounded-full h-1.5 overflow-hidden inline-block shrink-0">
                               <div
