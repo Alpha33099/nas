@@ -5,6 +5,8 @@ import { useState, useEffect } from "react";
 interface Esim {
   id: string;
   provider_name: string;
+  provider_email?: string;
+  provider_password?: string;
   activation_code: string | null;
   notes: string | null;
   status: string;
@@ -21,12 +23,27 @@ export default function EsimsPage() {
   const [successMsg, setSuccessMsg] = useState("");
   const [saving, setSaving] = useState(false);
 
-  // Form fields
+  // Add Form fields
   const [providerName, setProviderName] = useState("");
   const [providerEmail, setProviderEmail] = useState("");
   const [providerPassword, setProviderPassword] = useState("");
   const [activationCode, setActivationCode] = useState("");
   const [notes, setNotes] = useState("");
+
+  // Edit State
+  const [editingEsim, setEditingEsim] = useState<Esim | null>(null);
+  const [editProviderName, setEditProviderName] = useState("");
+  const [editProviderEmail, setEditProviderEmail] = useState("");
+  const [editProviderPassword, setEditProviderPassword] = useState("");
+  const [editActivationCode, setEditActivationCode] = useState("");
+  const [editNotes, setEditNotes] = useState("");
+  const [editStatus, setEditStatus] = useState("available");
+  const [updating, setUpdating] = useState(false);
+
+  // Delete State
+  const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [deleteName, setDeleteName] = useState("");
+  const [deleting, setDeleting] = useState(false);
 
   // Filter
   const [filter, setFilter] = useState<"all" | "available" | "assigned">("all");
@@ -52,6 +69,87 @@ export default function EsimsPage() {
     setNotes("");
     setShowAddForm(false);
     setError("");
+  }
+
+  function startEdit(esim: Esim) {
+    setEditingEsim(esim);
+    setEditProviderName(esim.provider_name);
+    setEditProviderEmail(esim.provider_email || "");
+    setEditProviderPassword(esim.provider_password || "");
+    setEditActivationCode(esim.activation_code || "");
+    setEditNotes(esim.notes || "");
+    setEditStatus(esim.status);
+    setError("");
+  }
+
+  async function handleUpdate() {
+    if (!editingEsim || !editProviderName) {
+      setError("Provider name is required.");
+      return;
+    }
+
+    setUpdating(true);
+    setError("");
+
+    try {
+      const res = await fetch("/api/admin/esims", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: editingEsim.id,
+          provider_name: editProviderName,
+          provider_email: editProviderEmail,
+          provider_password: editProviderPassword,
+          activation_code: editActivationCode || null,
+          notes: editNotes || null,
+          status: editStatus,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || "Failed to update eSIM.");
+        setUpdating(false);
+        return;
+      }
+
+      setEditingEsim(null);
+      setUpdating(false);
+      setSuccessMsg("Carrier info updated successfully!");
+      setTimeout(() => setSuccessMsg(""), 3000);
+      fetchEsims();
+    } catch {
+      setError("Failed to update carrier info.");
+      setUpdating(false);
+    }
+  }
+
+  async function handleDelete() {
+    if (!deleteId) return;
+    setDeleting(true);
+    setError("");
+
+    try {
+      const res = await fetch(`/api/admin/esims?id=${deleteId}`, {
+        method: "DELETE",
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || "Failed to delete eSIM.");
+        setDeleting(false);
+        return;
+      }
+
+      setDeleteId(null);
+      setDeleting(false);
+      setSuccessMsg("eSIM deleted successfully!");
+      setTimeout(() => setSuccessMsg(""), 3000);
+      fetchEsims();
+    } catch {
+      setError("Failed to delete eSIM.");
+      setDeleting(false);
+    }
   }
 
   async function handleAdd() {
@@ -365,17 +463,187 @@ export default function EsimsPage() {
                   </div>
                 </div>
 
-                <div className="text-right shrink-0 self-start sm:self-center">
-                  <p className="text-2xs text-slate-400 font-mono">
-                    ID: {esim.id.slice(0, 8)}
-                  </p>
-                  <p className="text-2xs text-slate-400 mt-0.5">
-                    Added {new Date(esim.created_at).toISOString().split("T")[0]}
-                  </p>
+                <div className="flex items-center gap-2.5 shrink-0 self-end sm:self-center">
+                  <div className="text-right mr-2 hidden sm:block">
+                    <p className="text-2xs text-slate-400 font-mono">
+                      ID: {esim.id.slice(0, 8)}
+                    </p>
+                    <p className="text-2xs text-slate-400 mt-0.5">
+                      Added {new Date(esim.created_at).toISOString().split("T")[0]}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => startEdit(esim)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-xl border border-slate-200 transition-colors shadow-2xs"
+                    title="Edit Carrier Info & Credentials"
+                  >
+                    <svg className="w-3.5 h-3.5 text-teal-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                    </svg>
+                    <span>Edit</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      setDeleteId(esim.id);
+                      setDeleteName(esim.provider_name);
+                    }}
+                    className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-colors border border-transparent hover:border-rose-200"
+                    title="Delete eSIM Profile"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                  </button>
                 </div>
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* ── Edit eSIM Modal ────────────────────────────────────────── */}
+      {editingEsim && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 px-4">
+          <div className="bg-white rounded-2xl p-6 max-w-lg w-full shadow-2xl border border-slate-200 animate-in fade-in zoom-in-95 duration-150 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-teal-50 border border-teal-100 flex items-center justify-center text-teal-700">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                  </svg>
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900">Edit Carrier Info</h3>
+                  <p className="text-2xs text-slate-400">Update carrier credentials and LPA allocation details</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setEditingEsim(null)}
+                className="text-slate-400 hover:text-slate-600 text-sm font-bold p-1"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-3.5 text-xs">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Provider / Carrier Name</label>
+                <input
+                  type="text"
+                  value={editProviderName}
+                  onChange={(e) => setEditProviderName(e.target.value)}
+                  placeholder="e.g. Airalo, eSIM.net, Simly"
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 text-slate-900 font-medium focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Carrier Account Email</label>
+                  <input
+                    type="email"
+                    value={editProviderEmail}
+                    onChange={(e) => setEditProviderEmail(e.target.value)}
+                    placeholder="account@carrier.com"
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 text-slate-900 focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Carrier Password</label>
+                  <input
+                    type="text"
+                    value={editProviderPassword}
+                    onChange={(e) => setEditProviderPassword(e.target.value)}
+                    placeholder="Carrier password"
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 text-slate-900 font-mono focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Activation Code (LPA String)</label>
+                <input
+                  type="text"
+                  value={editActivationCode}
+                  onChange={(e) => setEditActivationCode(e.target.value)}
+                  placeholder="LPA:1$..."
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 text-slate-900 font-mono focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Inventory Status</label>
+                  <select
+                    value={editStatus}
+                    onChange={(e) => setEditStatus(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 text-slate-900 bg-white font-medium focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
+                  >
+                    <option value="available">Ready in Stock (Available)</option>
+                    <option value="assigned">Assigned to Customer</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Internal Reference Notes</label>
+                  <input
+                    type="text"
+                    value={editNotes}
+                    onChange={(e) => setEditNotes(e.target.value)}
+                    placeholder="Optional notes"
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 text-slate-900 focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="flex gap-2.5 mt-5 pt-3 border-t border-slate-100">
+              <button
+                onClick={handleUpdate}
+                disabled={updating || !editProviderName}
+                className="flex-1 py-2.5 bg-slate-900 text-white font-semibold rounded-xl hover:bg-slate-800 disabled:opacity-50 transition-colors text-xs shadow-xs"
+              >
+                {updating ? "Saving Changes..." : "Save Carrier Info"}
+              </button>
+              <button
+                onClick={() => setEditingEsim(null)}
+                className="px-4 py-2.5 bg-white text-slate-700 font-semibold rounded-xl border border-slate-300 hover:bg-slate-50 transition-colors text-xs"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Delete Confirmation Modal ────────────────────────────── */}
+      {deleteId && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 px-4">
+          <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl border border-slate-200 animate-in fade-in zoom-in-95 duration-150">
+            <div className="w-12 h-12 rounded-2xl bg-rose-50 border border-rose-200 flex items-center justify-center text-rose-600 mb-4">
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
+            </div>
+            <h3 className="text-sm font-bold text-slate-900 mb-1">Delete eSIM Profile?</h3>
+            <p className="text-xs text-slate-500 mb-4 leading-relaxed">
+              Are you sure you want to permanently delete the eSIM for <strong className="text-slate-800 font-semibold">{deleteName}</strong>? Any linked customer plan will be unlinked.
+            </p>
+            <div className="flex gap-2.5">
+              <button
+                onClick={handleDelete}
+                disabled={deleting}
+                className="flex-1 py-2 bg-rose-600 text-white text-xs font-semibold rounded-xl hover:bg-rose-700 disabled:opacity-50 transition-colors shadow-xs"
+              >
+                {deleting ? "Deleting..." : "Yes, Delete eSIM"}
+              </button>
+              <button
+                onClick={() => setDeleteId(null)}
+                className="px-4 py-2 bg-white text-slate-700 text-xs font-semibold rounded-xl border border-slate-300 hover:bg-slate-50 transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

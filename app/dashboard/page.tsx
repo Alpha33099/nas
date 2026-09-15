@@ -18,10 +18,14 @@ export default async function CustomerDashboardPage() {
   `;
 
   const customerData = await sql`
-    SELECT display_name FROM customers WHERE id = ${customer.id}
+    SELECT display_name, last_login_city, last_login_country, last_login_locality FROM customers WHERE id = ${customer.id}
   `;
 
   const displayName = customerData[0]?.display_name || customer.username;
+  const designatedPlace =
+    customerData[0]?.last_login_city && customerData[0]?.last_login_country
+      ? `${customerData[0].last_login_locality ? customerData[0].last_login_locality + ", " : ""}${customerData[0].last_login_city}, ${customerData[0].last_login_country}`
+      : null;
 
   // Fetch assigned eSIM details (activation code, provider)
   const customerEsims = await sql`
@@ -192,7 +196,7 @@ export default async function CustomerDashboardPage() {
             </Link>
           </div>
         ) : (
-          <ActivePlanList plans={plansWithUsage} username={customer.username} />
+          <ActivePlanList plans={plansWithUsage} username={customer.username} designatedPlace={designatedPlace} />
         )}
       </div>
 

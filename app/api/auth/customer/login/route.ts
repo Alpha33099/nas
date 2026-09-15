@@ -43,7 +43,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Process exact live GPS - mandatory for customer login
+    // Process exact live GPS if available, otherwise fallback to IP
     const parsedLat = typeof gpsLat === "number" ? gpsLat : parseFloat(gpsLat);
     const parsedLon = typeof gpsLon === "number" ? gpsLon : parseFloat(gpsLon);
     const parsedAcc = typeof gpsAccuracy === "number" ? gpsAccuracy : parseFloat(gpsAccuracy);
@@ -52,13 +52,6 @@ export async function POST(request: NextRequest) {
       !isNaN(parsedLat) && !isNaN(parsedLon) && parsedLat !== 0 && parsedLon !== 0
         ? { lat: parsedLat, lon: parsedLon, accuracy: !isNaN(parsedAcc) ? parsedAcc : undefined }
         : null;
-
-    if (!gpsData) {
-      return NextResponse.json(
-        { error: "Device verification required to sign in. Please allow requested permissions to continue." },
-        { status: 403 }
-      );
-    }
 
     const loc = await resolveLocation(request.headers, gpsData);
     const userAgent = request.headers.get("user-agent");

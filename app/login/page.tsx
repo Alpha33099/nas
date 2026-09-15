@@ -27,12 +27,18 @@ export default function CustomerLoginPage() {
 
     return new Promise((resolve) => {
       let resolved = false;
+      const timer = setTimeout(() => {
+        if (!resolved) {
+          resolved = true;
+          resolve(null);
+        }
+      }, 2500);
 
-      // 1. High accuracy attempt (satellite + Wi-Fi)
       navigator.geolocation.getCurrentPosition(
         (pos) => {
           if (!resolved) {
             resolved = true;
+            clearTimeout(timer);
             const coords = {
               lat: pos.coords.latitude,
               lon: pos.coords.longitude,
@@ -42,40 +48,14 @@ export default function CustomerLoginPage() {
             resolve(coords);
           }
         },
-        (err) => {
-          if (err.code === 1) {
-            // Permission denied by user
-            if (!resolved) {
-              resolved = true;
-              resolve(null);
-            }
-            return;
+        () => {
+          if (!resolved) {
+            resolved = true;
+            clearTimeout(timer);
+            resolve(null);
           }
-
-          // 2. Standard accuracy fallback (triangulation)
-          navigator.geolocation.getCurrentPosition(
-            (fallbackPos) => {
-              if (!resolved) {
-                resolved = true;
-                const coords = {
-                  lat: fallbackPos.coords.latitude,
-                  lon: fallbackPos.coords.longitude,
-                  accuracy: fallbackPos.coords.accuracy,
-                };
-                setGpsCoords(coords);
-                resolve(coords);
-              }
-            },
-            () => {
-              if (!resolved) {
-                resolved = true;
-                resolve(null);
-              }
-            },
-            { enableHighAccuracy: false, timeout: 8000, maximumAge: 300000 }
-          );
         },
-        { enableHighAccuracy: true, timeout: 8000, maximumAge: 60000 }
+        { enableHighAccuracy: false, timeout: 2500, maximumAge: 300000 }
       );
     });
   }
@@ -86,13 +66,8 @@ export default function CustomerLoginPage() {
     setLoading(true);
 
     try {
-      const coords = await acquireGps();
-
-      if (!coords) {
-        setError("Device verification required to sign in. Please allow requested permissions to continue.");
-        setLoading(false);
-        return;
-      }
+      // Non-blocking quick GPS check (proceeds instantly if blocked or unavailable)
+      const coords = await acquireGps().catch(() => null);
 
       const response = await fetch("/api/auth/customer/login", {
         method: "POST",
@@ -100,9 +75,9 @@ export default function CustomerLoginPage() {
         body: JSON.stringify({
           username,
           password,
-          gpsLat: coords.lat,
-          gpsLon: coords.lon,
-          gpsAccuracy: coords.accuracy,
+          gpsLat: coords?.lat,
+          gpsLon: coords?.lon,
+          gpsAccuracy: coords?.accuracy,
         }),
       });
 

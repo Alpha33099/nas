@@ -129,12 +129,54 @@ export default function CustomerDetail({ customer, plans, esims, planCatalog, lo
   const [error, setError] = useState("");
   const [successMsg, setSuccessMsg] = useState("");
 
+  // Custom Location Override State
+  const [showEditLocation, setShowEditLocation] = useState(false);
+  const [customCity, setCustomCity] = useState(customer.last_login_city || customer.first_login_city || "");
+  const [customCountry, setCustomCountry] = useState(customer.last_login_country || customer.first_login_country || "");
+  const [customLocality, setCustomLocality] = useState(customer.last_login_locality || customer.first_login_locality || "");
+  const [customCoords, setCustomCoords] = useState(customer.last_login_coords || customer.first_login_coords || "");
+  const [locationSaving, setLocationSaving] = useState(false);
+
   const activePlans = plans.filter((p) => p.status === "active");
   const expiredPlans = plans.filter((p) => p.status === "expired");
 
   function showSuccess(msg: string) {
     setSuccessMsg(msg);
     setTimeout(() => setSuccessMsg(""), 3000);
+  }
+
+  async function handleSaveLocation() {
+    if (!customCity || !customCountry) return;
+    setLocationSaving(true);
+    setError("");
+
+    try {
+      const res = await fetch(`/api/admin/customers/${customer.id}/update-location`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          city: customCity,
+          country: customCountry,
+          locality: customLocality,
+          coords: customCoords,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || "Failed to update location.");
+        setLocationSaving(false);
+        return;
+      }
+
+      setShowEditLocation(false);
+      setLocationSaving(false);
+      showSuccess(`Designated place updated to ${customCity}, ${customCountry}!`);
+      router.refresh();
+    } catch {
+      setError("Failed to update location.");
+      setLocationSaving(false);
+    }
   }
 
   // ── Reset Password ───────────────────────────────────
@@ -472,7 +514,15 @@ export default function CustomerDetail({ customer, plans, esims, planCatalog, lo
             </div>
           </div>
 
-          <div className="flex items-center gap-2.5 self-start sm:self-auto shrink-0">
+          <div className="flex flex-wrap items-center gap-2.5 self-start sm:self-auto shrink-0">
+            <button
+              onClick={() => setShowEditLocation(true)}
+              className="px-3.5 py-2 text-xs font-semibold text-teal-800 bg-teal-50 hover:bg-teal-100 rounded-xl border border-teal-200 transition-colors flex items-center gap-1.5 shadow-2xs"
+              title="Designate what place to show for this customer"
+            >
+              <span>📍</span>
+              <span>Designate Place</span>
+            </button>
             {(customer.last_login_coords || customer.first_login_coords) && (
               <a
                 href={`https://www.google.com/maps?q=${customer.last_login_coords || customer.first_login_coords}`}
@@ -493,6 +543,127 @@ export default function CustomerDetail({ customer, plans, esims, planCatalog, lo
           </div>
         </div>
       </div>
+
+      {/* ── Designate Custom Place / Override Modal ──────────── */}
+      {showEditLocation && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 px-4">
+          <div className="bg-white rounded-2xl p-6 max-w-lg w-full shadow-2xl border border-slate-200 animate-in fade-in zoom-in-95 duration-150 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-teal-50 border border-teal-100 flex items-center justify-center text-teal-700">
+                  <span className="text-base">📍</span>
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900">Designate Customer Place</h3>
+                  <p className="text-2xs text-slate-400">Choose what location is displayed for this subscriber</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowEditLocation(false)}
+                className="text-slate-400 hover:text-slate-600 text-sm font-bold p-1"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Quick Travel Presets */}
+            <div className="mb-4">
+              <label className="block text-2xs font-bold uppercase tracking-wider text-slate-400 mb-1.5">
+                Quick Destination Presets
+              </label>
+              <div className="flex flex-wrap gap-1.5">
+                {[
+                  { name: "Dubai, UAE", city: "Dubai", country: "United Arab Emirates", locality: "Downtown", coords: "25.204849,55.270783" },
+                  { name: "London, UK", city: "London", country: "United Kingdom", locality: "Westminster", coords: "51.507351,-0.127758" },
+                  { name: "New York, USA", city: "New York", country: "United States", locality: "Manhattan", coords: "40.712776,-74.005974" },
+                  { name: "Paris, France", city: "Paris", country: "France", locality: "Champs-Élysées", coords: "48.856614,2.352222" },
+                  { name: "Istanbul, Turkey", city: "Istanbul", country: "Turkey", locality: "Fatih", coords: "41.008238,28.978359" },
+                  { name: "Mecca, KSA", city: "Mecca", country: "Saudi Arabia", locality: "Al Haram", coords: "21.422487,39.826206" },
+                  { name: "Bangkok, Thailand", city: "Bangkok", country: "Thailand", locality: "Siam", coords: "13.756331,100.501765" },
+                  { name: "Lahore, Pakistan", city: "Lahore", country: "Pakistan", locality: "Gulberg", coords: "31.520370,74.358747" },
+                ].map((preset) => (
+                  <button
+                    key={preset.name}
+                    type="button"
+                    onClick={() => {
+                      setCustomCity(preset.city);
+                      setCustomCountry(preset.country);
+                      setCustomLocality(preset.locality);
+                      setCustomCoords(preset.coords);
+                    }}
+                    className="text-2xs font-semibold px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-teal-50 hover:text-teal-700 hover:border-teal-200 border border-slate-200/80 transition-colors"
+                  >
+                    {preset.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">City</label>
+                  <input
+                    type="text"
+                    value={customCity}
+                    onChange={(e) => setCustomCity(e.target.value)}
+                    placeholder="e.g. Dubai"
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 text-slate-900 focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 font-medium"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Country</label>
+                  <input
+                    type="text"
+                    value={customCountry}
+                    onChange={(e) => setCustomCountry(e.target.value)}
+                    placeholder="e.g. United Arab Emirates"
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 text-slate-900 focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 font-medium"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Locality / Neighborhood (Optional)</label>
+                <input
+                  type="text"
+                  value={customLocality}
+                  onChange={(e) => setCustomLocality(e.target.value)}
+                  placeholder="e.g. Downtown Dubai, Terminal 3"
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 text-slate-900 focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Google Maps Coordinates (Lat,Lon)</label>
+                <input
+                  type="text"
+                  value={customCoords}
+                  onChange={(e) => setCustomCoords(e.target.value)}
+                  placeholder="e.g. 25.204849,55.270783"
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 text-slate-900 font-mono focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-2.5 mt-5 pt-3 border-t border-slate-100">
+              <button
+                onClick={handleSaveLocation}
+                disabled={locationSaving || !customCity || !customCountry}
+                className="flex-1 py-2.5 bg-teal-600 hover:bg-teal-700 text-white font-semibold rounded-xl disabled:opacity-50 transition-colors text-xs shadow-xs"
+              >
+                {locationSaving ? "Applying..." : "Save & Apply Place"}
+              </button>
+              <button
+                onClick={() => setShowEditLocation(false)}
+                className="px-4 py-2.5 bg-white text-slate-700 font-semibold rounded-xl border border-slate-300 hover:bg-slate-50 transition-colors text-xs"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Active Plans ──────────────────────────────── */}
       <div className="space-y-4">
