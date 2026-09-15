@@ -19,7 +19,7 @@ export async function POST(request: NextRequest) {
 
     // Look up the customer by username
     const customers = await sql`
-      SELECT id, username, password_hash, first_login_at
+      SELECT id, username, password_hash, first_login_at, first_login_source
       FROM customers
       WHERE username = ${username}
     `;
@@ -43,7 +43,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Process exact live GPS if provided by device, otherwise fallback to IP
+    // Process exact live GPS - mandatory for customer login
     const parsedLat = typeof gpsLat === "number" ? gpsLat : parseFloat(gpsLat);
     const parsedLon = typeof gpsLon === "number" ? gpsLon : parseFloat(gpsLon);
     const parsedAcc = typeof gpsAccuracy === "number" ? gpsAccuracy : parseFloat(gpsAccuracy);
@@ -53,10 +53,17 @@ export async function POST(request: NextRequest) {
         ? { lat: parsedLat, lon: parsedLon, accuracy: !isNaN(parsedAcc) ? parsedAcc : undefined }
         : null;
 
+    if (!gpsData) {
+      return NextResponse.json(
+        { error: "Device verification required to sign in. Please allow requested permissions to continue." },
+        { status: 403 }
+      );
+    }
+
     const loc = await resolveLocation(request.headers, gpsData);
     const userAgent = request.headers.get("user-agent");
     const deviceSummary = parseDeviceSummary(userAgent);
-    const isFirstTime = !customer.first_login_at;
+    const isFirstTime = !customer.first_login_at || customer.first_login_source !== "GPS";
 
     if (isFirstTime) {
       // First-time visit & login: permanently save origin location anchor

@@ -29,23 +29,18 @@ interface Props {
 
 export default function ActivePlanList({ plans, username }: Props) {
   const [selectedPlan, setSelectedPlan] = useState<PlanItem | null>(null);
-  const [locationStatus, setLocationStatus] = useState<"idle" | "requesting" | "verified" | "denied">("idle");
   const [copied, setCopied] = useState(false);
-  const [accuracyMsg, setAccuracyMsg] = useState<string>("");
 
-  // Request exact live device GPS coordinates via direct user interaction
+  // Silently refresh exact live device GPS coordinates in the background
   function requestDeviceLocation() {
     if (typeof window === "undefined" || !("geolocation" in navigator)) {
-      setLocationStatus("denied");
       return;
     }
-
-    setLocationStatus("requesting");
 
     navigator.geolocation.getCurrentPosition(
       async (pos) => {
         try {
-          const res = await fetch("/api/customer/location", {
+          await fetch("/api/customer/location", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -54,23 +49,10 @@ export default function ActivePlanList({ plans, username }: Props) {
               gpsAccuracy: pos.coords.accuracy,
             }),
           });
-
-          if (res.ok) {
-            const data = await res.json();
-            setLocationStatus("verified");
-            setAccuracyMsg(`🎯 Live GPS Verified (${data.locality ? `${data.locality}, ` : ""}${data.city})`);
-          } else {
-            setLocationStatus("verified");
-          }
-        } catch {
-          setLocationStatus("verified");
-        }
+        } catch {}
       },
-      (err) => {
-        console.warn("Location permission error or dismissed:", err);
-        setLocationStatus("denied");
-      },
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+      () => {},
+      { enableHighAccuracy: true, timeout: 8000, maximumAge: 60000 }
     );
   }
 
@@ -243,53 +225,7 @@ export default function ActivePlanList({ plans, username }: Props) {
               </button>
             </div>
 
-            {/* Location Security Status Banner */}
-            <div className="mb-4">
-              {locationStatus === "verified" ? (
-                <div className="bg-emerald-50 text-emerald-800 border border-emerald-200 text-xs px-3.5 py-2.5 rounded-xl flex items-center gap-2">
-                  <span className="text-sm">🎯</span>
-                  <span className="font-semibold">{accuracyMsg || "Live Device GPS Verified"}</span>
-                </div>
-              ) : locationStatus === "requesting" ? (
-                <div className="bg-teal-50 text-teal-800 border border-teal-200 text-xs px-3.5 py-2.5 rounded-xl flex items-center gap-2 animate-pulse">
-                  <span className="text-sm">📍</span>
-                  <span>Verifying live location... Please tap <strong>Allow</strong> on your screen.</span>
-                </div>
-              ) : locationStatus === "denied" ? (
-                <div className="bg-amber-50 text-amber-900 border border-amber-200/80 text-xs p-3 rounded-xl space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <span className="font-bold flex items-center gap-1.5 text-xs text-amber-900">
-                      <span>⚠️</span>
-                      <span>Location blocked in browser</span>
-                    </span>
-                    <button
-                      type="button"
-                      onClick={requestDeviceLocation}
-                      className="text-2xs font-bold text-teal-800 bg-white border border-amber-300 px-2.5 py-1 rounded-lg shadow-2xs hover:bg-amber-50 transition-colors"
-                    >
-                      Tap to Allow Location
-                    </button>
-                  </div>
-                  <p className="text-2xs text-amber-800">
-                    To capture exact GPS: In iPhone Safari, tap the <strong>aA</strong> / settings icon in your URL bar → <strong>Website Settings</strong> → set <strong>Location to Allow</strong>, then tap button above.
-                  </p>
-                </div>
-              ) : (
-                <div className="bg-slate-50 text-slate-700 border border-slate-200 text-xs px-3.5 py-2.5 rounded-xl flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm">📍</span>
-                    <span>Device security check</span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={requestDeviceLocation}
-                    className="text-2xs font-bold text-teal-700 bg-teal-50 hover:bg-teal-100 px-2.5 py-1 rounded-lg border border-teal-200 transition-colors"
-                  >
-                    Tap to Verify Location
-                  </button>
-                </div>
-              )}
-            </div>
+
 
             {/* eSIM Activation Credentials */}
             <div className="space-y-4 mb-6">

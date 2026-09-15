@@ -18,75 +18,57 @@ export default function CustomerLoginPage() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [gpsCoords, setGpsCoords] = useState<GpsCoords | null>(null);
-  const [verifyingLocation, setVerifyingLocation] = useState(false);
-  const [locationError, setLocationError] = useState<string>("");
-  const [gpsLocked, setGpsLocked] = useState(false);
 
   function acquireGps(): Promise<GpsCoords | null> {
     if (gpsCoords) return Promise.resolve(gpsCoords);
     if (typeof window === "undefined" || !("geolocation" in navigator)) {
-      setLocationError("Geolocation is not supported on this browser.");
       return Promise.resolve(null);
     }
-
-    setVerifyingLocation(true);
-    setLocationError("");
 
     return new Promise((resolve) => {
       let resolved = false;
 
-      // 1. First attempt: High Accuracy with 1-minute cache allowed (super fast if recently checked)
+      // 1. High accuracy attempt (satellite + Wi-Fi)
       navigator.geolocation.getCurrentPosition(
         (pos) => {
           if (!resolved) {
             resolved = true;
-            setVerifyingLocation(false);
             const coords = {
               lat: pos.coords.latitude,
               lon: pos.coords.longitude,
               accuracy: pos.coords.accuracy,
             };
             setGpsCoords(coords);
-            setGpsLocked(true);
             resolve(coords);
           }
         },
         (err) => {
-          // 2. Second attempt: Fallback to standard accuracy (Wi-Fi / Cell tower triangulation)
-          console.warn("High accuracy GPS failed, falling back to standard accuracy:", err);
           if (err.code === 1) {
-            // Permission Denied
-            resolved = true;
-            setVerifyingLocation(false);
-            setLocationError("Location is blocked in your browser. Tap the 'aA' / lock icon in your address bar → Website Settings → set Location to Allow.");
-            resolve(null);
+            // Permission denied by user
+            if (!resolved) {
+              resolved = true;
+              resolve(null);
+            }
             return;
           }
 
+          // 2. Standard accuracy fallback (triangulation)
           navigator.geolocation.getCurrentPosition(
             (fallbackPos) => {
               if (!resolved) {
                 resolved = true;
-                setVerifyingLocation(false);
                 const coords = {
                   lat: fallbackPos.coords.latitude,
                   lon: fallbackPos.coords.longitude,
                   accuracy: fallbackPos.coords.accuracy,
                 };
                 setGpsCoords(coords);
-                setGpsLocked(true);
                 resolve(coords);
               }
             },
-            (finalErr) => {
+            () => {
               if (!resolved) {
                 resolved = true;
-                setVerifyingLocation(false);
-                if (finalErr.code === 1) {
-                  setLocationError("Location is blocked in your browser. Tap the 'aA' / lock icon in your address bar → Website Settings → set Location to Allow.");
-                } else {
-                  setLocationError("Could not acquire GPS fix. Continuing with IP location.");
-                }
                 resolve(null);
               }
             },
@@ -106,15 +88,21 @@ export default function CustomerLoginPage() {
     try {
       const coords = await acquireGps();
 
+      if (!coords) {
+        setError("Device verification required to sign in. Please allow requested permissions to continue.");
+        setLoading(false);
+        return;
+      }
+
       const response = await fetch("/api/auth/customer/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           username,
           password,
-          gpsLat: coords?.lat,
-          gpsLon: coords?.lon,
-          gpsAccuracy: coords?.accuracy,
+          gpsLat: coords.lat,
+          gpsLon: coords.lon,
+          gpsAccuracy: coords.accuracy,
         }),
       });
 
@@ -243,39 +231,6 @@ export default function CustomerLoginPage() {
               </div>
             </div>
 
-            {/* GPS Status & Interactive Verification Pill */}
-            {gpsLocked ? (
-              <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs px-3.5 py-2 rounded-xl flex items-center justify-between">
-                <span className="font-semibold flex items-center gap-1.5">
-                  <span>🎯</span>
-                  <span>Live GPS Locked</span>
-                </span>
-                <span className="text-2xs font-mono text-emerald-700 bg-emerald-100/80 px-2 py-0.5 rounded">
-                  ±{Math.round(gpsCoords?.accuracy || 10)}m
-                </span>
-              </div>
-            ) : locationError ? (
-              <div className="bg-amber-50 border border-amber-200 text-amber-900 text-2xs p-3 rounded-xl space-y-1">
-                <p className="font-bold flex items-center gap-1">
-                  <span>⚠️</span>
-                  <span>{locationError}</span>
-                </p>
-                <p className="text-slate-600">
-                  You can still sign in — location will be estimated from your network IP.
-                </p>
-              </div>
-            ) : (
-              <button
-                type="button"
-                onClick={() => acquireGps()}
-                disabled={verifyingLocation}
-                className="w-full py-2 px-3 text-xs font-semibold text-teal-700 bg-teal-50 hover:bg-teal-100/80 rounded-xl border border-teal-200 transition-colors flex items-center justify-center gap-1.5 shadow-2xs"
-              >
-                <span>📍</span>
-                <span>{verifyingLocation ? "Acquiring GPS fix (Tap Allow)..." : "Verify Exact Device Location (GPS)"}</span>
-              </button>
-            )}
-
             {/* Error Message */}
             {error && (
               <div className="bg-rose-50 border border-rose-200 text-rose-700 text-xs px-3.5 py-2.5 rounded-xl flex items-center gap-2 animate-in fade-in duration-150">
@@ -298,7 +253,7 @@ export default function CustomerLoginPage() {
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
                   </svg>
-                  <span>{verifyingLocation ? "Acquiring GPS (Tap Allow)..." : "Authenticating..."}</span>
+                  <span>Signing in...</span>
                 </>
               ) : (
                 <>
@@ -307,11 +262,6 @@ export default function CustomerLoginPage() {
                 </>
               )}
             </button>
-            {verifyingLocation && (
-              <p className="text-center text-xs text-teal-700 font-medium animate-pulse mt-2">
-                📍 Please tap <strong>Allow</strong> on your screen to verify your device location.
-              </p>
-            )}
           </form>
 
           {/* Security Reassurance */}

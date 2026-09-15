@@ -93,12 +93,22 @@ export default async function CustomerLocationPage({
       {/* ── Interactive Map Embed (if coords available) ─────────── */}
       {activeCoords && (
         <div className="bg-white rounded-2xl border border-slate-200/90 overflow-hidden shadow-2xs">
-          <div className="p-4 border-b border-slate-100 flex items-center justify-between">
+          <div className="p-4 border-b border-slate-100 flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-2">
               <span className="text-base">🗺️</span>
               <h2 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
                 Active Location Map Preview
               </h2>
+              {customer.last_login_source === "GPS" || customer.first_login_source === "GPS" ? (
+                <span className="text-2xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded-md flex items-center gap-1">
+                  <span>🎯</span>
+                  <span>Exact Device GPS Pin ({customer.last_login_accuracy || customer.first_login_accuracy || "High Precision"})</span>
+                </span>
+              ) : (
+                <span className="text-2xs font-medium bg-slate-100 text-slate-600 border border-slate-200 px-2 py-0.5 rounded-md">
+                  🌐 IP Gateway Estimate
+                </span>
+              )}
             </div>
             <span className="font-mono text-2xs text-slate-500 bg-slate-100 px-2 py-0.5 rounded-md">
               {activeCoords}
@@ -111,7 +121,7 @@ export default async function CustomerLocationPage({
               height="100%"
               frameBorder="0"
               scrolling="no"
-              src={`https://maps.google.com/maps?q=${activeCoords}&hl=en&z=14&output=embed`}
+              src={`https://maps.google.com/maps?q=${activeCoords}&hl=en&z=16&output=embed`}
               className="w-full h-full border-0"
             />
           </div>
