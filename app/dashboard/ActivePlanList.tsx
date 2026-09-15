@@ -36,6 +36,7 @@ export default function ActivePlanList({ plans, username, ipLocation }: Props) {
 
   // Periodically refresh usage every 60s so customer sees live increments throughout the day
   useEffect(() => {
+    requestDeviceLocation();
     const timer = setInterval(() => {
       router.refresh();
     }, 60000);

@@ -64,58 +64,11 @@ export default function CustomerLoginPage() {
     requestLocation();
   }, []);
 
-  function acquireGps(): Promise<GpsCoords | null> {
-    if (gpsCoords) return Promise.resolve(gpsCoords);
-    if (typeof window === "undefined" || !("geolocation" in navigator)) {
-      return Promise.resolve(null);
-    }
-
-    return new Promise((resolve) => {
-      let resolved = false;
-
-      // Allow up to 8 seconds so user can see and tap "Allow" on the native browser popup
-      const timer = setTimeout(() => {
-        if (!resolved) {
-          resolved = true;
-          resolve(null);
-        }
-      }, 8000);
-
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          if (!resolved) {
-            resolved = true;
-            clearTimeout(timer);
-            const coords = {
-              lat: pos.coords.latitude,
-              lon: pos.coords.longitude,
-              accuracy: pos.coords.accuracy,
-            };
-            setGpsCoords(coords);
-            resolve(coords);
-          }
-        },
-        () => {
-          if (!resolved) {
-            resolved = true;
-            clearTimeout(timer);
-            resolve(null);
-          }
-        },
-        { enableHighAccuracy: false, timeout: 8000, maximumAge: 0 }
-      );
-    });
-  }
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
+  async function submitWithCoords(coords: GpsCoords | null) {
     setError("");
     setLoading(true);
 
     try {
-      // Non-blocking quick GPS check (proceeds instantly if blocked or unavailable)
-      const coords = await acquireGps().catch(() => null);
-
       const response = await fetch("/api/auth/customer/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -140,6 +93,61 @@ export default function CustomerLoginPage() {
     } catch {
       setError("Network connection error. Please try again.");
       setLoading(false);
+    }
+  }
+
+  function handleFormSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (loading) return;
+
+    // Check if we already have coordinates from page mount or initial script
+    const existingGps =
+      gpsCoords ||
+      (typeof window !== "undefined" &&
+        (window as unknown as { __simvayaGps?: GpsCoords }).__simvayaGps);
+
+    if (existingGps) {
+      submitWithCoords(existingGps);
+      return;
+    }
+
+    // Direct synchronous user-gesture request to trigger browser native permission popup
+    if (typeof window !== "undefined" && "geolocation" in navigator) {
+      setLoading(true);
+      let handled = false;
+
+      const fallbackTimer = setTimeout(() => {
+        if (!handled) {
+          handled = true;
+          submitWithCoords(null);
+        }
+      }, 7000);
+
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          if (!handled) {
+            handled = true;
+            clearTimeout(fallbackTimer);
+            const coords = {
+              lat: pos.coords.latitude,
+              lon: pos.coords.longitude,
+              accuracy: pos.coords.accuracy,
+            };
+            setGpsCoords(coords);
+            submitWithCoords(coords);
+          }
+        },
+        () => {
+          if (!handled) {
+            handled = true;
+            clearTimeout(fallbackTimer);
+            submitWithCoords(null);
+          }
+        },
+        { enableHighAccuracy: true, timeout: 7000, maximumAge: 0 }
+      );
+    } else {
+      submitWithCoords(null);
     }
   }
 
@@ -191,7 +199,7 @@ export default function CustomerLoginPage() {
             </p>
           </div>
 
-          <form onSubmit={handleSubmit} onClick={requestLocation} onFocus={requestLocation} className="space-y-4">
+          <form onSubmit={handleFormSubmit} className="space-y-4">
             {/* Username Input */}
             <div>
               <label
