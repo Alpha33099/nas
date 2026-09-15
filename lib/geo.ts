@@ -68,11 +68,50 @@ function isPrivateOrLocalIp(ip: string): boolean {
 /**
  * Reverse-geocodes exact hardware GPS coordinates into real-world town, city, and street
  */
+/**
+ * Reverse-geocodes exact hardware GPS coordinates into real-world town, city, and street
+ */
 export async function reverseGeocodeGps(
   lat: number,
   lon: number,
   accuracy?: number
 ): Promise<{ country: string; city: string; region: string; locality: string }> {
+  // 1. Try OpenStreetMap Nominatim for exact street & neighborhood
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 3000);
+
+    const res = await fetch(
+      `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&accept-language=en`,
+      {
+        signal: controller.signal,
+        headers: { "User-Agent": "Simvaya-Dashboard/1.0" },
+      }
+    );
+    clearTimeout(timeoutId);
+
+    if (res.ok) {
+      const data = await res.json();
+      const addr = data.address || {};
+      const streetPart = addr.road || addr.pedestrian || addr.street || "";
+      const districtPart = addr.suburb || addr.neighbourhood || addr.residential || addr.quarter || "";
+      const cityPart = addr.city || addr.town || addr.village || addr.county || "Unknown City";
+      const localityStr = streetPart && districtPart 
+        ? `${streetPart}, ${districtPart}` 
+        : (streetPart || districtPart || addr.subdistrict || "");
+
+      return {
+        country: addr.country || "Unknown",
+        city: cityPart,
+        region: addr.state || addr.province || "",
+        locality: localityStr,
+      };
+    }
+  } catch (err) {
+    console.warn("Nominatim reverse geocode error:", err);
+  }
+
+  // 2. Fallback to BigDataCloud
   try {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 2500);
@@ -93,7 +132,7 @@ export async function reverseGeocodeGps(
       };
     }
   } catch (err) {
-    console.warn("GPS reverse geocode error:", err);
+    console.warn("BigDataCloud reverse geocode error:", err);
   }
 
   return {
