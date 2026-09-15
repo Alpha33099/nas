@@ -17,20 +17,26 @@ export default function CustomerLoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [gateStatus, setGateStatus] = useState<"checking" | "granted" | "blocked">("checking");
   const [gpsCoords, setGpsCoords] = useState<GpsCoords | null>(null);
 
-  // Trigger browser location permission popup immediately and refine coords with GPS
+  // Compulsory location gate: requests permission and unlocks login form on allow
   function requestLocation() {
-    if (typeof window === "undefined" || !("geolocation" in navigator)) return;
-
-    // Check if initial inline script already captured coords
-    const initialGps = (window as unknown as { __simvayaGps?: GpsCoords }).__simvayaGps;
-    if (initialGps && !gpsCoords) {
-      setGpsCoords(initialGps);
+    if (typeof window === "undefined" || !("geolocation" in navigator)) {
+      setGateStatus("blocked");
       return;
     }
 
-    // Fast initial request (enableHighAccuracy: false) to trigger native browser permission popup without stalling
+    // Check if initial inline script already captured coords
+    const initialGps = (window as unknown as { __simvayaGps?: GpsCoords }).__simvayaGps;
+    if (initialGps) {
+      setGpsCoords(initialGps);
+      setGateStatus("granted");
+      return;
+    }
+
+    setGateStatus("checking");
+
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         const coords = {
@@ -40,27 +46,52 @@ export default function CustomerLoginPage() {
         };
         setGpsCoords(coords);
         (window as unknown as { __simvayaGps?: GpsCoords }).__simvayaGps = coords;
+        setGateStatus("granted");
 
         // Once permission is granted, refine to exact high-accuracy GPS hardware coordinates
         navigator.geolocation.getCurrentPosition(
           (refinedPos) => {
-            setGpsCoords({
+            const refined = {
               lat: refinedPos.coords.latitude,
               lon: refinedPos.coords.longitude,
               accuracy: refinedPos.coords.accuracy,
-            });
+            };
+            setGpsCoords(refined);
+            (window as unknown as { __simvayaGps?: GpsCoords }).__simvayaGps = refined;
           },
           () => {},
           { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
         );
       },
-      () => {},
+      (err) => {
+        console.warn("Location permission refused or error:", err);
+        setGateStatus("blocked");
+      },
       { enableHighAccuracy: false, timeout: 10000, maximumAge: 0 }
     );
   }
 
-  // 1. Trigger immediately on page mount
   useEffect(() => {
+    if (typeof navigator !== "undefined" && navigator.permissions?.query) {
+      navigator.permissions
+        .query({ name: "geolocation" })
+        .then((status) => {
+          if (status.state === "denied") {
+            setGateStatus("blocked");
+          } else if (status.state === "granted") {
+            requestLocation();
+          }
+          status.onchange = () => {
+            if (status.state === "denied") {
+              setGateStatus("blocked");
+            } else {
+              requestLocation();
+            }
+          };
+        })
+        .catch(() => {});
+    }
+
     requestLocation();
   }, []);
 
@@ -191,15 +222,65 @@ export default function CustomerLoginPage() {
         </div>
 
         {/* Card Container */}
-        <div className="bg-white rounded-3xl shadow-xl shadow-slate-200/60 border border-slate-200/80 p-7 sm:p-9 transition-all">
-          <div className="mb-6 pb-5 border-b border-slate-100">
-            <h2 className="text-base font-bold text-slate-900">Sign in to your account</h2>
-            <p className="text-xs text-slate-400 mt-0.5">
-              Access your active eSIM data, check real-time usage, or top up.
+        {gateStatus === "checking" ? (
+          <div className="bg-white rounded-3xl shadow-xl shadow-slate-200/60 border border-slate-200/80 p-7 sm:p-9 text-center animate-in fade-in duration-300">
+            <div className="w-16 h-16 rounded-2xl bg-teal-50 border border-teal-100 flex items-center justify-center mx-auto mb-4 text-2xl animate-pulse">
+              📍
+            </div>
+            <h2 className="text-lg font-bold text-slate-900">Device Verification</h2>
+            <p className="text-xs text-slate-500 mt-2 max-w-sm mx-auto leading-relaxed">
+              Please tap <strong>Allow</strong> on your screen when prompted by your browser to verify your device location and enter the portal.
             </p>
+            <div className="mt-6 flex items-center justify-center gap-2 text-2xs text-teal-700 font-semibold bg-teal-50 py-2.5 px-4 rounded-xl border border-teal-200/60">
+              <svg className="animate-spin w-3.5 h-3.5" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
+              </svg>
+              <span>Waiting for location permission...</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => requestLocation()}
+              className="mt-4 text-2xs text-teal-600 hover:text-teal-700 underline font-medium"
+            >
+              Click here if browser prompt didn&apos;t appear
+            </button>
           </div>
+        ) : gateStatus === "blocked" ? (
+          <div className="bg-white rounded-3xl shadow-xl shadow-slate-200/60 border border-rose-200/80 p-7 sm:p-9 text-center animate-in fade-in duration-300">
+            <div className="w-16 h-16 rounded-2xl bg-rose-50 border border-rose-200 flex items-center justify-center mx-auto mb-4 text-2xl">
+              🔒
+            </div>
+            <h2 className="text-lg font-bold text-slate-900">Location Access Required</h2>
+            <p className="text-xs text-slate-600 mt-2 max-w-sm mx-auto leading-relaxed">
+              Device location verification is mandatory to access your eSIM account. You cannot enter without allowing location.
+            </p>
 
-          <form onSubmit={handleFormSubmit} className="space-y-4">
+            <div className="mt-5 p-3.5 rounded-2xl bg-slate-50 border border-slate-200 text-2xs text-slate-500 text-left space-y-1.5">
+              <p className="font-bold text-slate-700">How to allow in your browser:</p>
+              <p>1. Tap the <strong>🔒 lock or tune icon</strong> in your address bar.</p>
+              <p>2. Change <strong>Location</strong> to <strong>Allow</strong>.</p>
+              <p>3. Tap the retry button below.</p>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => requestLocation()}
+              className="w-full mt-5 py-3 px-4 bg-teal-600 hover:bg-teal-700 active:bg-teal-800 text-white text-xs sm:text-sm font-bold rounded-xl shadow-md shadow-teal-600/20 transition-all flex items-center justify-center gap-2"
+            >
+              <span>📍 Allow Location & Continue</span>
+            </button>
+          </div>
+        ) : (
+          <div className="bg-white rounded-3xl shadow-xl shadow-slate-200/60 border border-slate-200/80 p-7 sm:p-9 transition-all">
+            <div className="mb-6 pb-5 border-b border-slate-100">
+              <h2 className="text-base font-bold text-slate-900">Sign in to your account</h2>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Access your active eSIM data, check real-time usage, or top up.
+              </p>
+            </div>
+
+            <form onSubmit={handleFormSubmit} className="space-y-4">
             {/* Username Input */}
             <div>
               <label
@@ -322,6 +403,7 @@ export default function CustomerLoginPage() {
             <span>256-bit encrypted secure session</span>
           </div>
         </div>
+      )}
 
         {/* Concierge & Support Card */}
         <div className="mt-6 bg-white/70 backdrop-blur-xs rounded-2xl border border-slate-200/80 p-4 text-center shadow-2xs">
