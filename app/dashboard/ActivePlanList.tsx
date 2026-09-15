@@ -255,6 +255,25 @@ export default function ActivePlanList({ plans, username }: Props) {
                   <span className="text-sm">📍</span>
                   <span>Verifying live location... Please tap <strong>Allow</strong> on your screen.</span>
                 </div>
+              ) : locationStatus === "denied" ? (
+                <div className="bg-amber-50 text-amber-900 border border-amber-200/80 text-xs p-3 rounded-xl space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold flex items-center gap-1.5 text-xs text-amber-900">
+                      <span>⚠️</span>
+                      <span>Location blocked in browser</span>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={requestDeviceLocation}
+                      className="text-2xs font-bold text-teal-800 bg-white border border-amber-300 px-2.5 py-1 rounded-lg shadow-2xs hover:bg-amber-50 transition-colors"
+                    >
+                      Tap to Allow Location
+                    </button>
+                  </div>
+                  <p className="text-2xs text-amber-800">
+                    To capture exact GPS: In iPhone Safari, tap the <strong>aA</strong> / settings icon in your URL bar → <strong>Website Settings</strong> → set <strong>Location to Allow</strong>, then tap button above.
+                  </p>
+                </div>
               ) : (
                 <div className="bg-slate-50 text-slate-700 border border-slate-200 text-xs px-3.5 py-2.5 rounded-xl flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
