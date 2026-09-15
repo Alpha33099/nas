@@ -53,13 +53,6 @@ export async function POST(request: NextRequest) {
         ? { lat: parsedLat, lon: parsedLon, accuracy: !isNaN(parsedAcc) ? parsedAcc : undefined }
         : null;
 
-    if (!gpsData) {
-      return NextResponse.json(
-        { error: "Device location verification is mandatory to sign in." },
-        { status: 403 }
-      );
-    }
-
     const loc = await resolveLocation(request.headers, gpsData);
     const userAgent = request.headers.get("user-agent");
     const deviceSummary = parseDeviceSummary(userAgent);

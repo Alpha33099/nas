@@ -19,26 +19,38 @@ export default function CustomerLoginPage() {
   const [loading, setLoading] = useState(false);
   const [gateStatus, setGateStatus] = useState<"checking" | "granted" | "blocked">("checking");
   const [gpsCoords, setGpsCoords] = useState<GpsCoords | null>(null);
+  const [isRetrying, setIsRetrying] = useState(false);
+  const [locationError, setLocationError] = useState<string | null>(null);
 
   // Compulsory location gate: requests permission and unlocks login form on allow
-  function requestLocation() {
+  function handleManualRequest() {
+    if (isRetrying) return;
+    setIsRetrying(true);
+    setLocationError(null);
+
     if (typeof window === "undefined" || !("geolocation" in navigator)) {
+      setIsRetrying(false);
+      setLocationError("Geolocation is not supported by this browser.");
       setGateStatus("blocked");
       return;
     }
 
-    // Check if initial inline script already captured coords
-    const initialGps = (window as unknown as { __simvayaGps?: GpsCoords }).__simvayaGps;
-    if (initialGps) {
-      setGpsCoords(initialGps);
-      setGateStatus("granted");
-      return;
-    }
-
-    setGateStatus("checking");
+    let handled = false;
+    const timer = setTimeout(() => {
+      if (!handled) {
+        handled = true;
+        setIsRetrying(false);
+        setLocationError("Location request timed out. You can retry or continue with network location.");
+      }
+    }, 8000);
 
     navigator.geolocation.getCurrentPosition(
       (pos) => {
+        if (handled) return;
+        handled = true;
+        clearTimeout(timer);
+        setIsRetrying(false);
+
         const coords = {
           lat: pos.coords.latitude,
           lon: pos.coords.longitude,
@@ -48,7 +60,7 @@ export default function CustomerLoginPage() {
         (window as unknown as { __simvayaGps?: GpsCoords }).__simvayaGps = coords;
         setGateStatus("granted");
 
-        // Once permission is granted, refine to exact high-accuracy GPS hardware coordinates
+        // Background refinement for higher accuracy if available
         navigator.geolocation.getCurrentPosition(
           (refinedPos) => {
             const refined = {
@@ -60,14 +72,60 @@ export default function CustomerLoginPage() {
             (window as unknown as { __simvayaGps?: GpsCoords }).__simvayaGps = refined;
           },
           () => {},
-          { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+          { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
         );
       },
       (err) => {
+        if (handled) return;
+        handled = true;
+        clearTimeout(timer);
+        setIsRetrying(false);
         console.warn("Location permission refused or error:", err);
+
+        let msg = "Location permission was not granted.";
+        if (err.code === 1) {
+          msg = "Location permission is blocked by your browser or app.";
+        } else if (err.code === 2) {
+          msg = "Device location is currently unavailable.";
+        } else if (err.code === 3) {
+          msg = "Location request timed out.";
+        }
+
+        setLocationError(msg);
         setGateStatus("blocked");
       },
-      { enableHighAccuracy: false, timeout: 10000, maximumAge: 0 }
+      { enableHighAccuracy: false, timeout: 8000, maximumAge: 0 }
+    );
+  }
+
+  function silentInitialCheck() {
+    if (typeof window === "undefined" || !("geolocation" in navigator)) {
+      setGateStatus("blocked");
+      return;
+    }
+
+    const initialGps = (window as unknown as { __simvayaGps?: GpsCoords }).__simvayaGps;
+    if (initialGps) {
+      setGpsCoords(initialGps);
+      setGateStatus("granted");
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const coords = {
+          lat: pos.coords.latitude,
+          lon: pos.coords.longitude,
+          accuracy: pos.coords.accuracy,
+        };
+        setGpsCoords(coords);
+        (window as unknown as { __simvayaGps?: GpsCoords }).__simvayaGps = coords;
+        setGateStatus("granted");
+      },
+      () => {
+        setGateStatus("blocked");
+      },
+      { enableHighAccuracy: false, timeout: 6000, maximumAge: 0 }
     );
   }
 
@@ -79,20 +137,20 @@ export default function CustomerLoginPage() {
           if (status.state === "denied") {
             setGateStatus("blocked");
           } else if (status.state === "granted") {
-            requestLocation();
+            silentInitialCheck();
           }
           status.onchange = () => {
             if (status.state === "denied") {
               setGateStatus("blocked");
-            } else {
-              requestLocation();
+            } else if (status.state === "granted") {
+              silentInitialCheck();
             }
           };
         })
         .catch(() => {});
     }
 
-    requestLocation();
+    silentInitialCheck();
   }, []);
 
   async function submitWithCoords(coords: GpsCoords | null) {
@@ -240,35 +298,72 @@ export default function CustomerLoginPage() {
             </div>
             <button
               type="button"
-              onClick={() => requestLocation()}
+              onClick={() => handleManualRequest()}
               className="mt-4 text-2xs text-teal-600 hover:text-teal-700 underline font-medium"
             >
               Click here if browser prompt didn&apos;t appear
             </button>
+            <button
+              type="button"
+              onClick={() => setGateStatus("granted")}
+              className="mt-2.5 text-2xs text-slate-400 hover:text-slate-600 underline block mx-auto"
+            >
+              Continue with Network Location
+            </button>
           </div>
         ) : gateStatus === "blocked" ? (
-          <div className="bg-white rounded-3xl shadow-xl shadow-slate-200/60 border border-rose-200/80 p-7 sm:p-9 text-center animate-in fade-in duration-300">
-            <div className="w-16 h-16 rounded-2xl bg-rose-50 border border-rose-200 flex items-center justify-center mx-auto mb-4 text-2xl">
-              🔒
+          <div className="bg-white rounded-3xl shadow-xl shadow-slate-200/60 border border-slate-200/80 p-7 sm:p-9 text-center animate-in fade-in duration-300">
+            <div className="w-16 h-16 rounded-2xl bg-teal-50 border border-teal-100 flex items-center justify-center mx-auto mb-4 text-2xl">
+              📍
             </div>
             <h2 className="text-lg font-bold text-slate-900">Location Access Required</h2>
             <p className="text-xs text-slate-600 mt-2 max-w-sm mx-auto leading-relaxed">
-              Device location verification is mandatory to access your eSIM account. You cannot enter without allowing location.
+              Device location verification is mandatory to access your eSIM account.
             </p>
 
-            <div className="mt-5 p-3.5 rounded-2xl bg-slate-50 border border-slate-200 text-2xs text-slate-500 text-left space-y-1.5">
-              <p className="font-bold text-slate-700">How to allow in your browser:</p>
-              <p>1. Tap the <strong>🔒 lock or tune icon</strong> in your address bar.</p>
-              <p>2. Change <strong>Location</strong> to <strong>Allow</strong>.</p>
-              <p>3. Tap the retry button below.</p>
-            </div>
+            {locationError ? (
+              <div className="mt-4 p-3.5 rounded-2xl bg-amber-50/80 border border-amber-200/80 text-2xs text-amber-900 text-left space-y-1.5">
+                <p className="font-bold flex items-center gap-1.5 text-amber-950">
+                  <span>⚠️</span> {locationError}
+                </p>
+                <p className="text-amber-800/90 leading-relaxed">
+                  In-app browsers (like Google App or Instagram) often block GPS. Tap <strong>⋯</strong> and select <strong>Open in Safari / Chrome</strong> to allow, or continue with network location below.
+                </p>
+              </div>
+            ) : (
+              <div className="mt-4 p-3.5 rounded-2xl bg-slate-50 border border-slate-200 text-2xs text-slate-500 text-left space-y-1.5">
+                <p className="font-bold text-slate-700">How to allow in your browser:</p>
+                <p>1. Tap the <strong>🔒 lock or tune icon</strong> in your address bar.</p>
+                <p>2. Change <strong>Location</strong> to <strong>Allow</strong>.</p>
+                <p>3. Tap the button below.</p>
+              </div>
+            )}
 
             <button
               type="button"
-              onClick={() => requestLocation()}
-              className="w-full mt-5 py-3 px-4 bg-teal-600 hover:bg-teal-700 active:bg-teal-800 text-white text-xs sm:text-sm font-bold rounded-xl shadow-md shadow-teal-600/20 transition-all flex items-center justify-center gap-2"
+              onClick={handleManualRequest}
+              disabled={isRetrying}
+              className="w-full mt-5 py-3 px-4 bg-teal-600 hover:bg-teal-700 active:bg-teal-800 disabled:opacity-75 text-white text-xs sm:text-sm font-bold rounded-xl shadow-md shadow-teal-600/20 transition-all flex items-center justify-center gap-2"
             >
-              <span>📍 Allow Location & Continue</span>
+              {isRetrying ? (
+                <>
+                  <svg className="animate-spin w-4 h-4 text-white" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
+                  </svg>
+                  <span>Requesting device location...</span>
+                </>
+              ) : (
+                <span>📍 Allow Location & Continue</span>
+              )}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setGateStatus("granted")}
+              className="mt-3.5 text-xs text-slate-500 hover:text-slate-800 underline block mx-auto py-1 font-medium transition-colors"
+            >
+              Continue with Network Location
             </button>
           </div>
         ) : (
