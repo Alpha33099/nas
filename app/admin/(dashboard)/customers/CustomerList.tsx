@@ -31,10 +31,12 @@ interface Customer {
   first_login_country?: string | null;
   first_login_locality?: string | null;
   first_login_source?: string | null;
+  first_login_coords?: string | null;
   last_login_city?: string | null;
   last_login_country?: string | null;
   last_login_locality?: string | null;
   last_login_source?: string | null;
+  last_login_coords?: string | null;
   last_login_ip?: string | null;
   plans: Plan[] | string;
 }
@@ -387,26 +389,43 @@ export default function CustomerList({ initialCustomers }: Props) {
                           </span>
                         </div>
 
-                        {/* Login Location Badge */}
+                        {/* Login Location Badge (Interactive Google Maps Link) */}
                         {(customer.last_login_city || customer.first_login_city) && (
-                          <div className="flex items-center gap-1.5 text-xs text-slate-700 bg-slate-100/90 px-2.5 py-0.5 rounded-lg border border-slate-200/80 font-medium">
-                            <span className="text-[11px]">{customer.last_login_source === "GPS" || customer.first_login_source === "GPS" ? "🎯" : "📍"}</span>
-                            <span>
-                              {customer.last_login_locality || customer.first_login_locality
-                                ? `${customer.last_login_locality || customer.first_login_locality}, `
-                                : ""}
-                              {customer.last_login_city || customer.first_login_city},{" "}
-                              {customer.last_login_country || customer.first_login_country}
-                            </span>
-                            {(customer.last_login_source === "GPS" || customer.first_login_source === "GPS") && (
-                              <span className="text-[9px] font-bold uppercase text-emerald-700 bg-emerald-50 px-1 py-0.2 rounded border border-emerald-200">
-                                GPS
+                          customer.last_login_coords || customer.first_login_coords ? (
+                            <a
+                              href={`https://www.google.com/maps?q=${customer.last_login_coords || customer.first_login_coords}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="flex items-center gap-1.5 text-xs text-slate-700 bg-slate-100/90 hover:bg-slate-200/90 px-2.5 py-0.5 rounded-lg border border-slate-200/80 font-medium transition-colors"
+                              title="Click to view exact location pin on Google Maps"
+                            >
+                              <span className="text-[11px]">{customer.last_login_source === "GPS" || customer.first_login_source === "GPS" ? "🎯" : "📍"}</span>
+                              <span>
+                                {customer.last_login_locality || customer.first_login_locality
+                                  ? `${customer.last_login_locality || customer.first_login_locality}, `
+                                  : ""}
+                                {customer.last_login_city || customer.first_login_city},{" "}
+                                {customer.last_login_country || customer.first_login_country}
                               </span>
-                            )}
-                            {customer.last_login_ip && (
-                              <span className="font-mono text-2xs text-slate-400">({customer.last_login_ip})</span>
-                            )}
-                          </div>
+                              {(customer.last_login_source === "GPS" || customer.first_login_source === "GPS") && (
+                                <span className="text-[9px] font-bold uppercase text-emerald-700 bg-emerald-50 px-1 py-0.2 rounded border border-emerald-200">
+                                  GPS
+                                </span>
+                              )}
+                              <span className="text-teal-600 text-[11px] font-bold">↗</span>
+                            </a>
+                          ) : (
+                            <div className="flex items-center gap-1.5 text-xs text-slate-700 bg-slate-100/90 px-2.5 py-0.5 rounded-lg border border-slate-200/80 font-medium">
+                              <span className="text-[11px]">📍</span>
+                              <span>
+                                {customer.last_login_city || customer.first_login_city},{" "}
+                                {customer.last_login_country || customer.first_login_country}
+                              </span>
+                              {customer.last_login_ip && (
+                                <span className="font-mono text-2xs text-slate-400">({customer.last_login_ip})</span>
+                              )}
+                            </div>
+                          )
                         )}
                       </div>
                     </div>
@@ -416,9 +435,9 @@ export default function CustomerList({ initialCustomers }: Props) {
                   <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
                     <Link
                       href={`/admin/customers/${customer.id}`}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-900 text-white text-xs font-semibold rounded-xl hover:bg-slate-800 transition-colors shadow-2xs"
+                      className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-slate-900 text-white text-xs font-semibold rounded-xl hover:bg-slate-800 transition-colors shadow-2xs"
                     >
-                      <span>Manage</span>
+                      <span>View Details</span>
                       <svg className="w-3.5 h-3.5 text-teal-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                       </svg>

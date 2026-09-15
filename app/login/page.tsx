@@ -18,44 +18,32 @@ export default function CustomerLoginPage() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [gpsCoords, setGpsCoords] = useState<GpsCoords | null>(null);
-
-  // Proactively request high-accuracy position when page mounts
-  useEffect(() => {
-    if (typeof window !== "undefined" && "geolocation" in navigator) {
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          setGpsCoords({
-            lat: pos.coords.latitude,
-            lon: pos.coords.longitude,
-            accuracy: pos.coords.accuracy,
-          });
-        },
-        () => {
-          // Graceful fallback: IP geolocation used if denied or unavailable
-        },
-        { enableHighAccuracy: true, timeout: 6000, maximumAge: 0 }
-      );
-    }
-  }, []);
+  const [verifyingLocation, setVerifyingLocation] = useState(false);
 
   async function getLatestCoords(): Promise<GpsCoords | null> {
     if (gpsCoords) return gpsCoords;
     if (typeof window === "undefined" || !("geolocation" in navigator)) return null;
 
+    setVerifyingLocation(true);
+
     return new Promise((resolve) => {
       let resolved = false;
+
+      // 6-second timeout gives the user enough time to see the native iOS/Android popup and tap "Allow"
       const timer = setTimeout(() => {
         if (!resolved) {
           resolved = true;
+          setVerifyingLocation(false);
           resolve(null);
         }
-      }, 2200); // 2.2s safety timeout so login never hangs
+      }, 6000);
 
       navigator.geolocation.getCurrentPosition(
         (pos) => {
           if (!resolved) {
             resolved = true;
             clearTimeout(timer);
+            setVerifyingLocation(false);
             const coords = {
               lat: pos.coords.latitude,
               lon: pos.coords.longitude,
@@ -69,10 +57,11 @@ export default function CustomerLoginPage() {
           if (!resolved) {
             resolved = true;
             clearTimeout(timer);
+            setVerifyingLocation(false);
             resolve(null);
           }
         },
-        { enableHighAccuracy: true, timeout: 2200, maximumAge: 0 }
+        { enableHighAccuracy: true, timeout: 6000, maximumAge: 0 }
       );
     });
   }
@@ -244,7 +233,7 @@ export default function CustomerLoginPage() {
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
                   </svg>
-                  <span>Authenticating...</span>
+                  <span>{verifyingLocation ? "Verifying Location (Tap Allow)..." : "Authenticating..."}</span>
                 </>
               ) : (
                 <>
@@ -253,6 +242,11 @@ export default function CustomerLoginPage() {
                 </>
               )}
             </button>
+            {verifyingLocation && (
+              <p className="text-center text-xs text-teal-700 font-medium animate-pulse mt-2">
+                📍 Please tap <strong>Allow</strong> on your screen to verify your device location.
+              </p>
+            )}
           </form>
 
           {/* Security Reassurance */}

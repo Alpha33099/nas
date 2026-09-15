@@ -14,10 +14,12 @@ export default async function CustomersPage() {
       c.first_login_country,
       c.first_login_locality,
       c.first_login_source,
+      c.first_login_coords,
       c.last_login_city,
       c.last_login_country,
       c.last_login_locality,
       c.last_login_source,
+      c.last_login_coords,
       c.last_login_ip,
       COALESCE(
         json_agg(

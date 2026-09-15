@@ -2,6 +2,7 @@ import { sql } from "@/lib/db";
 import { verifyCustomerToken } from "@/lib/auth";
 import { calculateCurrentUsage } from "@/lib/usage";
 import Link from "next/link";
+import ActivePlanList from "./ActivePlanList";
 
 export default async function CustomerDashboardPage() {
   const customer = await verifyCustomerToken();
@@ -21,6 +22,15 @@ export default async function CustomerDashboardPage() {
   `;
 
   const displayName = customerData[0]?.display_name || customer.username;
+
+  // Fetch assigned eSIM details (activation code, provider)
+  const customerEsims = await sql`
+    SELECT id, provider_name, activation_code, notes, status
+    FROM esims
+    WHERE assigned_customer_id = ${customer.id}
+    LIMIT 1
+  `;
+  const primaryEsim = customerEsims[0] || null;
 
   // 2. Fetch Active plans only with calibration baseline
   const activePlans = await sql`
@@ -81,6 +91,9 @@ export default async function CustomerDashboardPage() {
       dailyRate: usage.dailyRate,
       isLow: usagePercent >= 80,
       isExpiringSoon: daysRemaining <= 3,
+      activation_code: primaryEsim?.activation_code || null,
+      provider_name: primaryEsim?.provider_name || null,
+      notes: primaryEsim?.notes || null,
     };
   });
 
@@ -179,118 +192,7 @@ export default async function CustomerDashboardPage() {
             </Link>
           </div>
         ) : (
-          <div className="grid grid-cols-1 gap-5">
-            {plansWithUsage.map((plan) => (
-              <div
-                key={plan.id}
-                className={`relative overflow-hidden bg-white rounded-3xl border p-6 sm:p-7 shadow-xs transition-all ${
-                  plan.isExpiringSoon
-                    ? "border-amber-300 ring-1 ring-amber-100"
-                    : plan.isLow
-                    ? "border-amber-300 ring-1 ring-amber-100"
-                    : "border-slate-200"
-                }`}
-              >
-                {/* Header */}
-                <div className="flex items-start justify-between gap-4 mb-5">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <h3 className="text-lg font-bold text-slate-900">{plan.plan_name} Plan</h3>
-                      <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200/50">
-                        Active
-                      </span>
-                    </div>
-                    <p className="text-xs text-slate-400 mt-0.5">High-Speed 4G / 5G Global Roaming</p>
-                  </div>
-
-                  <a
-                    href={`https://ig.me/m/simvaya21?text=${encodeURIComponent(
-                      `Hi Simvaya! I'd like to top up my ${plan.plan_name} plan for @${customer.username}.`
-                    )}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-slate-900 hover:bg-teal-600 text-white transition-all shadow-xs shrink-0"
-                  >
-                    <svg className="w-3.5 h-3.5 text-teal-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                    </svg>
-                    <span>Top Up Data</span>
-                  </a>
-                </div>
-
-                {/* Battery-style remaining data progress bar */}
-                <div className="bg-slate-50/80 rounded-2xl p-4 border border-slate-100 mb-5">
-                  <div className="flex justify-between items-baseline text-sm mb-2">
-                    <div>
-                      <span className="text-xs font-medium text-slate-500 block">Remaining Data</span>
-                      <span className="text-xl font-black text-slate-800">
-                        {plan.remainingGb.toFixed(2)}{" "}
-                        <span className="text-xs font-bold text-slate-500">GB</span>
-                      </span>
-                    </div>
-                    <div className="text-right">
-                      <span className="text-xs font-medium text-slate-400">Data Used</span>
-                      <p className="text-sm font-semibold text-slate-700">
-                        {plan.displayedUsage.toFixed(2)} / {Number(plan.total_gb).toFixed(2)} GB ({plan.usagePercent}%)
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Progress bar: 100% full when fresh, drains down to 0% */}
-                  <div className="w-full bg-slate-200/80 rounded-full h-2.5 overflow-hidden">
-                    <div
-                      className={`h-full rounded-full transition-all duration-500 ${
-                        plan.isLow
-                          ? "bg-amber-500"
-                          : "bg-gradient-to-r from-teal-500 to-emerald-500"
-                      }`}
-                      style={{ width: `${Math.max(0, Math.min(100 - plan.usagePercent, 100))}%` }}
-                    />
-                  </div>
-
-                  {plan.isLow && (
-                    <div className="flex items-center gap-2 mt-3 text-xs text-amber-800 bg-amber-50 px-3 py-1.5 rounded-xl border border-amber-200">
-                      <span>Notice:</span>
-                      <span>You have used over 80% of your data. Click Top Up to stay connected.</span>
-                    </div>
-                  )}
-                </div>
-
-                {/* Metadata Grid */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-xs">
-                  <div className="bg-slate-50/50 p-3 rounded-xl border border-slate-100">
-                    <p className="text-slate-400 font-medium">Days Remaining</p>
-                    <p className={`text-sm font-bold mt-0.5 ${plan.isExpiringSoon ? "text-amber-600" : "text-slate-800"}`}>
-                      {plan.daysRemaining} Days
-                    </p>
-                  </div>
-
-                  <div className="bg-slate-50/50 p-3 rounded-xl border border-slate-100">
-                    <p className="text-slate-400 font-medium">Expiry Date</p>
-                    <p className="text-sm font-bold text-slate-800 mt-0.5">
-                      {new Date(plan.expiry_date).toISOString().split("T")[0]}
-                    </p>
-                  </div>
-
-                  <div className="bg-slate-50/50 p-3 rounded-xl border border-slate-100">
-                    <p className="text-slate-400 font-medium">Activation Date</p>
-                    <p className="text-sm font-bold text-slate-800 mt-0.5">
-                      {new Date(plan.start_date).toISOString().split("T")[0]}
-                    </p>
-                  </div>
-
-                  <div className="bg-slate-50/50 p-3 rounded-xl border border-slate-100">
-                    <p className="text-slate-400 font-medium">Usage Synced</p>
-                    <p className="text-sm font-bold text-slate-800 mt-0.5">
-                      {plan.last_usage_update_at
-                        ? new Date(plan.last_usage_update_at).toISOString().split("T")[0]
-                        : new Date().toISOString().split("T")[0]}
-                    </p>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
+          <ActivePlanList plans={plansWithUsage} username={customer.username} />
         )}
       </div>
 
