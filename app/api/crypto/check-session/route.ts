@@ -32,7 +32,7 @@ export async function GET(request: NextRequest) {
         id, customer_id, plan_catalog_id, plan_name,
         expected_amount_usdt, received_amount_usdt, deposit_address,
         deposit_priv_key_encrypted, deposit_priv_key_iv, deposit_priv_key_tag,
-        status, customer_identifier, expires_at
+        status, customer_identifier, expires_at, partial_expires_at
       FROM crypto_payment_sessions
       WHERE id = ${sessionId}
     `;
@@ -54,16 +54,48 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // Check if session has expired
-    if (new Date() > new Date(session.expires_at)) {
-      await sql`
-        UPDATE crypto_payment_sessions
-        SET status = 'expired'
-        WHERE id = ${sessionId} AND status = 'waiting'
-      `;
+    // Check if session or 10-minute partial payment window has expired
+    const isMainExpired = new Date() > new Date(session.expires_at);
+    const isPartialExpired = Boolean(session.partial_expires_at && new Date() > new Date(session.partial_expires_at));
+
+    if (isMainExpired || isPartialExpired) {
+      const onChainBal = await checkBscUsdtBalance(session.deposit_address);
+      const coldWallet = process.env.COLD_WALLET_ADDRESS;
+
+      // Auto-sweep any funds remaining on expired address to Cold Wallet
+      if (onChainBal > 0.05 && coldWallet && session.deposit_priv_key_encrypted) {
+        try {
+          const sweepRes = await autoSweepWithGasFunder(
+            session.deposit_priv_key_encrypted,
+            session.deposit_priv_key_iv,
+            session.deposit_priv_key_tag,
+            coldWallet
+          );
+          if (sweepRes.success && sweepRes.txHash) {
+            await sql`
+              UPDATE crypto_payment_sessions
+              SET status = 'expired_swept', tx_hash = ${sweepRes.txHash}, swept_at = now(), received_amount_usdt = ${onChainBal}
+              WHERE id = ${sessionId}
+            `;
+          }
+        } catch (err) {
+          console.error("Expired auto-sweep error:", err);
+        }
+      } else {
+        await sql`
+          UPDATE crypto_payment_sessions
+          SET status = 'expired'
+          WHERE id = ${sessionId} AND status = 'waiting'
+        `;
+      }
+
       return NextResponse.json({
         status: "expired",
-        message: "Checkout session expired. Please start a fresh order.",
+        receivedAmount: onChainBal,
+        expectedAmount: Number(session.expected_amount_usdt),
+        message: isPartialExpired
+          ? "The 10-minute window to complete payment has expired. Any received funds have been securely transferred to cold storage."
+          : "Checkout session expired. Please start a fresh order.",
       });
     }
 
@@ -210,10 +242,47 @@ export async function GET(request: NextRequest) {
       });
     }
 
+    // PARTIAL PAYMENT HANDLING
+    if (onChainBalance > 0) {
+      const remainingAmount = Math.max(0, parseFloat((expectedAmount - onChainBalance).toFixed(2)));
+
+      // If partial_expires_at is not set, set 10 minutes deadline from now
+      let partialExpiry = session.partial_expires_at;
+      if (!partialExpiry) {
+        const tenMinsLater = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+        await sql`
+          UPDATE crypto_payment_sessions
+          SET 
+            received_amount_usdt = ${onChainBalance},
+            partial_expires_at = ${tenMinsLater}
+          WHERE id = ${sessionId}
+        `;
+        partialExpiry = tenMinsLater;
+      } else {
+        await sql`
+          UPDATE crypto_payment_sessions
+          SET received_amount_usdt = ${onChainBalance}
+          WHERE id = ${sessionId}
+        `;
+      }
+
+      return NextResponse.json({
+        status: "waiting",
+        isPartial: true,
+        receivedAmount: onChainBalance,
+        remainingAmount,
+        expectedAmount,
+        partialExpiresAt: partialExpiry,
+        expiresAt: session.expires_at,
+      });
+    }
+
     // Still waiting for on-chain transfer
     return NextResponse.json({
       status: "waiting",
-      receivedAmount: onChainBalance,
+      isPartial: false,
+      receivedAmount: 0,
+      remainingAmount: expectedAmount,
       expectedAmount,
       expiresAt: session.expires_at,
     });

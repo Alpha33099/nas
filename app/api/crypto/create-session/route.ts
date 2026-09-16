@@ -55,7 +55,8 @@ export async function POST(request: NextRequest) {
         created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
         expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
         confirmed_at TIMESTAMP WITH TIME ZONE,
-        swept_at TIMESTAMP WITH TIME ZONE
+        swept_at TIMESTAMP WITH TIME ZONE,
+        partial_expires_at TIMESTAMP WITH TIME ZONE
       )
     `;
 

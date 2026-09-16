@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import QRCodeSVG from "./QRCodeSVG";
-import { X, Copy, Check, Zap, CheckCircle2, ShieldCheck, RefreshCw, Lock } from "lucide-react";
+import { X, Copy, Check, Zap, CheckCircle2, ShieldCheck, RefreshCw, Lock, Clock, AlertTriangle } from "lucide-react";
 import Link from "next/link";
 
 export interface CheckoutPlan {
@@ -48,7 +48,34 @@ export default function CheckoutModal({
   const [hasEsim, setHasEsim] = useState(false);
   const [isPolling, setIsPolling] = useState(false);
 
+  // Partial Payment State
+  const [isPartial, setIsPartial] = useState(false);
+  const [receivedAmount, setReceivedAmount] = useState(0);
+  const [remainingAmount, setRemainingAmount] = useState<number | null>(null);
+  const [partialExpiresAt, setPartialExpiresAt] = useState<string | null>(null);
+  const [copiedRemaining, setCopiedRemaining] = useState(false);
+  const [partialTimeLeft, setPartialTimeLeft] = useState("");
+
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  // 10-minute countdown for remaining partial balance
+  useEffect(() => {
+    if (!partialExpiresAt || !isPartial) {
+      setPartialTimeLeft("");
+      return;
+    }
+
+    const tick = () => {
+      const diff = Math.max(0, Math.floor((new Date(partialExpiresAt).getTime() - Date.now()) / 1000));
+      const mins = Math.floor(diff / 60);
+      const secs = diff % 60;
+      setPartialTimeLeft(`${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`);
+    };
+
+    tick();
+    const interval = setInterval(tick, 1000);
+    return () => clearInterval(interval);
+  }, [partialExpiresAt, isPartial]);
 
   // Initialize session on modal open
   useEffect(() => {
@@ -58,6 +85,10 @@ export default function CheckoutModal({
       setIsConfirmed(false);
       setError("");
       setIsAuthError(false);
+      setIsPartial(false);
+      setReceivedAmount(0);
+      setRemainingAmount(null);
+      setPartialExpiresAt(null);
       return;
     }
 
@@ -65,6 +96,10 @@ export default function CheckoutModal({
     setLoading(true);
     setError("");
     setIsAuthError(false);
+    setIsPartial(false);
+    setReceivedAmount(0);
+    setRemainingAmount(null);
+    setPartialExpiresAt(null);
 
     fetch("/api/crypto/create-session", {
       method: "POST",
@@ -114,7 +149,18 @@ export default function CheckoutModal({
         if (data.status === "confirmed") {
           setIsConfirmed(true);
           setHasEsim(Boolean(data.hasEsim));
+          setIsPartial(false);
           if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+        } else if (data.status === "expired") {
+          setError(data.message || "Checkout session expired. Please start a fresh order.");
+          if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+        } else if (data.isPartial) {
+          setIsPartial(true);
+          setReceivedAmount(Number(data.receivedAmount || 0));
+          setRemainingAmount(Number(data.remainingAmount || 0));
+          if (data.partialExpiresAt) {
+            setPartialExpiresAt(data.partialExpiresAt);
+          }
         }
       } catch (err) {
         console.error("Balance poll error:", err);
@@ -136,9 +182,17 @@ export default function CheckoutModal({
 
   async function handleCopyAmount() {
     if (!session) return;
-    await navigator.clipboard.writeText(session.totalUsdt.toFixed(2));
+    const amountToCopy = isPartial && remainingAmount != null ? remainingAmount : session.totalUsdt;
+    await navigator.clipboard.writeText(amountToCopy.toFixed(2));
     setCopiedAmount(true);
     setTimeout(() => setCopiedAmount(false), 2000);
+  }
+
+  async function handleCopyRemaining() {
+    if (remainingAmount == null) return;
+    await navigator.clipboard.writeText(remainingAmount.toFixed(2));
+    setCopiedRemaining(true);
+    setTimeout(() => setCopiedRemaining(false), 2000);
   }
 
   async function handleCopyAddress() {
@@ -287,8 +341,58 @@ export default function CheckoutModal({
               </h3>
             </div>
 
+            {/* PARTIAL PAYMENT ALERT BANNER */}
+            {isPartial && remainingAmount != null && (
+              <div className="rounded-2xl bg-amber-50/90 border-2 border-amber-300 p-4 space-y-3 animate-in fade-in slide-in-from-top-2 text-left shadow-sm">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 text-amber-900 font-bold text-xs">
+                    <span className="relative flex h-2 w-2">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
+                    </span>
+                    <span>Partial Payment Detected!</span>
+                  </div>
+                  {partialTimeLeft && (
+                    <span className="text-3xs font-mono font-bold bg-amber-200/90 text-amber-950 px-2.5 py-0.5 rounded-full flex items-center gap-1 border border-amber-300">
+                      <Clock size={11} className="text-amber-700 animate-pulse" />
+                      <span>{partialTimeLeft} remaining</span>
+                    </span>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <div className="bg-white p-2.5 rounded-xl border border-amber-200 shadow-2xs">
+                    <span className="text-slate-400 text-3xs uppercase font-bold block">Received</span>
+                    <span className="font-mono font-bold text-emerald-600 text-sm">
+                      {receivedAmount.toFixed(2)} USDT
+                    </span>
+                  </div>
+                  <div className="bg-white p-2.5 rounded-xl border border-amber-300 shadow-2xs">
+                    <span className="text-amber-700 text-3xs uppercase font-bold block">Remaining Due</span>
+                    <span className="font-mono font-black text-amber-700 text-sm">
+                      {remainingAmount.toFixed(2)} USDT
+                    </span>
+                  </div>
+                </div>
+
+                <div className="pt-1 flex items-center justify-between gap-2 border-t border-amber-200/60">
+                  <p className="text-3xs text-amber-900 leading-tight">
+                    Send the remaining balance within {partialTimeLeft || "10 minutes"} to activate your eSIM.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={handleCopyRemaining}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-amber-600 hover:bg-amber-700 active:scale-95 text-white transition shrink-0 shadow-xs shadow-amber-600/20"
+                  >
+                    {copiedRemaining ? <Check size={13} /> : <Copy size={13} />}
+                    <span>{copiedRemaining ? "Copied!" : `Copy $${remainingAmount.toFixed(2)}`}</span>
+                  </button>
+                </div>
+              </div>
+            )}
+
             {/* Price & Gas Breakdown */}
-            <div className="rounded-2xl bg-slate-50 border border-slate-200/90 p-3.5 space-y-2 text-xs">
+            <div className={`rounded-2xl border p-3.5 space-y-2 text-xs transition ${isPartial ? "bg-amber-50/40 border-amber-200" : "bg-slate-50 border-slate-200/90"}`}>
               <div className="flex justify-between items-center text-slate-600">
                 <span>Plan Price:</span>
                 <span className="font-semibold text-slate-800">${session.planPrice.toFixed(2)}</span>
@@ -303,20 +407,26 @@ export default function CheckoutModal({
               <div className="pt-2 border-t border-slate-200 flex justify-between items-center">
                 <div>
                   <span className="text-2xs uppercase tracking-wider font-bold text-slate-400 block">
-                    Exact Amount to Send
+                    {isPartial ? "Remaining Amount to Send" : "Exact Amount to Send"}
                   </span>
-                  <span className="text-xl font-black text-slate-900 tracking-tight">
-                    {session.totalUsdt.toFixed(2)}{" "}
-                    <span className="text-xs font-bold text-teal-600">USDT</span>
+                  <span className={`text-xl font-black tracking-tight ${isPartial ? "text-amber-700" : "text-slate-900"}`}>
+                    {isPartial && remainingAmount != null
+                      ? remainingAmount.toFixed(2)
+                      : session.totalUsdt.toFixed(2)}{" "}
+                    <span className={`text-xs font-bold ${isPartial ? "text-amber-600" : "text-teal-600"}`}>USDT</span>
                   </span>
                 </div>
                 <button
                   type="button"
                   onClick={handleCopyAmount}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-teal-50 hover:bg-teal-100 text-teal-700 border border-teal-200 transition active:scale-95"
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold border transition active:scale-95 ${
+                    isPartial
+                      ? "bg-amber-600 hover:bg-amber-700 text-white border-amber-600 shadow-xs"
+                      : "bg-teal-50 hover:bg-teal-100 text-teal-700 border-teal-200"
+                  }`}
                 >
                   {copiedAmount ? <Check size={14} /> : <Copy size={14} />}
-                  <span>{copiedAmount ? "Copied!" : "Copy Amount"}</span>
+                  <span>{copiedAmount ? "Copied!" : isPartial ? "Copy Remaining" : "Copy Amount"}</span>
                 </button>
               </div>
             </div>
