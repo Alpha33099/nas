@@ -162,3 +162,87 @@ export async function sweepDepositWallet(
     };
   }
 }
+
+/**
+ * 6. Automated Gas Relayer & Sweeper
+ * Automatically funds the deposit address with exact micro-BNB gas from GAS_FUNDER_PRIVATE_KEY
+ * and sweeps the full USDT balance directly to the Master Cold Wallet.
+ */
+export async function autoSweepWithGasFunder(
+  encryptedKey: string,
+  ivHex: string,
+  tagHex: string,
+  coldWalletAddress: string
+): Promise<{ success: boolean; txHash?: string; amount?: number; error?: string }> {
+  try {
+    const funderKey = process.env.GAS_FUNDER_PRIVATE_KEY;
+    if (!funderKey) {
+      console.warn("GAS_FUNDER_PRIVATE_KEY not set in environment. Falling back to direct sweep.");
+      return sweepDepositWallet(encryptedKey, ivHex, tagHex, coldWalletAddress);
+    }
+
+    const privKey = decryptPrivateKey(encryptedKey, ivHex, tagHex);
+    const provider = new ethers.JsonRpcProvider("https://bsc-dataseed.binance.org");
+    const depositWallet = new ethers.Wallet(privKey, provider);
+    const funderWallet = new ethers.Wallet(funderKey, provider);
+
+    // 1. Check USDT balance on deposit wallet
+    const currentUsdt = await checkBscUsdtBalance(depositWallet.address);
+    if (currentUsdt <= 0) {
+      return { success: false, error: "Zero USDT balance on deposit address." };
+    }
+
+    // 2. Check current BNB gas balance on deposit wallet
+    const depositBnb = await provider.getBalance(depositWallet.address);
+    const gasPrice = ethers.parseUnits("1", "gwei");
+    const requiredGasForSweep = BigInt(60000) * gasPrice; // ~0.00006 BNB max
+
+    if (depositBnb < requiredGasForSweep) {
+      const gasNeeded = requiredGasForSweep - depositBnb;
+      const funderBnb = await provider.getBalance(funderWallet.address);
+      if (funderBnb < gasNeeded + BigInt(21000) * gasPrice) {
+        console.warn("Gas Funder wallet has insufficient BNB balance for gas drop.");
+        return { success: false, error: "Gas Funder wallet out of BNB. Please fund relayer." };
+      }
+
+      console.log(`Relayer funding ${ethers.formatEther(gasNeeded)} BNB to ${depositWallet.address}...`);
+      const fundTx = await funderWallet.sendTransaction({
+        to: depositWallet.address,
+        value: gasNeeded,
+        gasPrice,
+        gasLimit: 21000,
+      });
+      await fundTx.wait(1);
+      console.log(`Gas funded successfully in tx: ${fundTx.hash}`);
+    }
+
+    // 3. Deposit wallet now has sufficient BNB. Sweep full USDT to cold wallet
+    const usdtAbi = [
+      "function balanceOf(address) view returns (uint256)",
+      "function transfer(address to, uint256 amount) returns (bool)",
+    ];
+    const usdtContract = new ethers.Contract(BSC_USDT_CONTRACT, usdtAbi, depositWallet);
+    const usdtUnits = await usdtContract.balanceOf(depositWallet.address);
+
+    const tx = await usdtContract.transfer(coldWalletAddress, usdtUnits, {
+      gasPrice,
+      gasLimit: 60000,
+    });
+
+    const receipt = await tx.wait(1);
+    console.log(`Auto-sweep confirmed on BSC: ${tx.hash}`);
+
+    return {
+      success: true,
+      txHash: receipt?.hash || tx.hash,
+      amount: currentUsdt,
+    };
+  } catch (err: any) {
+    console.error("Auto-sweep error:", err);
+    return {
+      success: false,
+      error: err?.message || "Auto-sweep failed.",
+    };
+  }
+}
+

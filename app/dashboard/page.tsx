@@ -48,6 +48,8 @@ export default async function CustomerDashboardPage() {
       cp.status,
       cp.last_usage_update_at,
       cp.created_at,
+      cp.is_installed,
+      cp.installed_at,
       pc.name as plan_name,
       e.id as esim_id,
       e.provider_name,

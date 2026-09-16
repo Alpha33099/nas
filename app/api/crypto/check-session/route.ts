@@ -1,5 +1,5 @@
 import { sql } from "@/lib/db";
-import { checkBscUsdtBalance } from "@/lib/crypto/bsc";
+import { checkBscUsdtBalance, autoSweepWithGasFunder } from "@/lib/crypto/bsc";
 import crypto from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -17,6 +17,7 @@ export async function GET(request: NextRequest) {
       SELECT 
         id, customer_id, plan_catalog_id, plan_name,
         expected_amount_usdt, received_amount_usdt, deposit_address,
+        deposit_priv_key_encrypted, deposit_priv_key_iv, deposit_priv_key_tag,
         status, customer_identifier, expires_at
       FROM crypto_payment_sessions
       WHERE id = ${sessionId}
@@ -125,6 +126,32 @@ export async function GET(request: NextRequest) {
           confirmed_at = now()
         WHERE id = ${sessionId}
       `;
+
+      // 5. Trigger automated gas funding & cold wallet sweep in background
+      const coldWallet = process.env.COLD_WALLET_ADDRESS;
+      if (coldWallet && session.deposit_priv_key_encrypted) {
+        autoSweepWithGasFunder(
+          session.deposit_priv_key_encrypted,
+          session.deposit_priv_key_iv,
+          session.deposit_priv_key_tag,
+          coldWallet
+        )
+          .then(async (sweepResult) => {
+            if (sweepResult.success && sweepResult.txHash) {
+              await sql`
+                UPDATE crypto_payment_sessions
+                SET status = 'swept', tx_hash = ${sweepResult.txHash}, swept_at = now()
+                WHERE id = ${sessionId}
+              `;
+              console.log(`Auto-sweep successful for session ${sessionId}: tx ${sweepResult.txHash}`);
+            } else {
+              console.warn(`Auto-sweep pending for session ${sessionId}: ${sweepResult.error}`);
+            }
+          })
+          .catch((err) => {
+            console.error("Auto-sweep background error:", err);
+          });
+      }
 
       return NextResponse.json({
         status: "confirmed",

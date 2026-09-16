@@ -19,6 +19,8 @@ export interface PlanItem {
   status: string;
   isLow: boolean;
   isExpiringSoon: boolean;
+  is_installed?: boolean;
+  installed_at?: string | null;
   activation_code?: string | null;
   provider_name?: string | null;
   notes?: string | null;
@@ -33,6 +35,7 @@ export default function ActivePlanList({ plans, username }: Props) {
   const router = useRouter();
   const [selectedPlan, setSelectedPlan] = useState<PlanItem | null>(null);
   const [copied, setCopied] = useState(false);
+  const [isMarkingInstalled, setIsMarkingInstalled] = useState(false);
 
   // Periodically refresh usage every 60s so customer sees live increments throughout the day
   useEffect(() => {
@@ -50,6 +53,30 @@ export default function ActivePlanList({ plans, username }: Props) {
     await navigator.clipboard.writeText(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  }
+
+  async function handleConfirmInstalled(planId: string) {
+    setIsMarkingInstalled(true);
+    try {
+      const res = await fetch(`/api/customer/plans/${planId}/installed`, {
+        method: "POST",
+      });
+      const data = await res.json();
+      if (data.success) {
+        if (selectedPlan && selectedPlan.id === planId) {
+          setSelectedPlan({
+            ...selectedPlan,
+            is_installed: true,
+            installed_at: data.installedAt || new Date().toISOString(),
+          });
+        }
+        router.refresh();
+      }
+    } catch (err) {
+      console.error("Failed to mark installed:", err);
+    } finally {
+      setIsMarkingInstalled(false);
+    }
   }
 
   return (
@@ -71,9 +98,16 @@ export default function ActivePlanList({ plans, username }: Props) {
               <div>
                 <div className="flex items-center gap-2">
                   <h3 className="text-lg font-bold text-slate-900">{plan.plan_name} Plan</h3>
-                  <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200/50">
-                    Active
-                  </span>
+                  {plan.is_installed ? (
+                    <span className="text-2xs font-bold px-2.5 py-0.5 rounded-full bg-emerald-100/80 text-emerald-800 border border-emerald-300/60 flex items-center gap-1">
+                      <span>✓</span>
+                      <span>Installed</span>
+                    </span>
+                  ) : (
+                    <span className="text-2xs font-bold px-2.5 py-0.5 rounded-full bg-teal-50 text-teal-700 border border-teal-200/60">
+                      Ready to Install
+                    </span>
+                  )}
                 </div>
                 <p className="text-xs text-slate-400 mt-0.5">High-Speed 4G / 5G Global Roaming</p>
               </div>
@@ -254,16 +288,49 @@ export default function ActivePlanList({ plans, username }: Props) {
                     </p>
                   </div>
 
-                  {/* Cellular activation notice */}
-                  <div className="p-3 bg-amber-50/80 border border-amber-200/80 rounded-xl text-2xs text-amber-900">
-                    <p className="font-bold flex items-center gap-1.5">
-                      <span>⏳</span>
-                      <span>Cellular Service Pending Admin Activation</span>
-                    </p>
-                    <p className="text-amber-800 mt-0.5">
-                      You can install your eSIM profile immediately. Roaming data access is activated by our admin team within a few minutes.
-                    </p>
-                  </div>
+                  {/* Cellular installation confirmation */}
+                  {selectedPlan.is_installed ? (
+                    <div className="p-3.5 bg-emerald-50 border border-emerald-200 rounded-2xl text-xs text-emerald-950 flex items-start gap-3 shadow-2xs">
+                      <div className="w-7 h-7 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0 text-xs font-black shadow-xs">
+                        ✓
+                      </div>
+                      <div className="flex-1">
+                        <div className="flex items-center justify-between">
+                          <p className="font-bold text-emerald-950 text-xs">eSIM Installed on Device</p>
+                          <span className="text-3xs font-extrabold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-full uppercase tracking-wider">
+                            Ready
+                          </span>
+                        </div>
+                        <p className="text-2xs text-emerald-800 mt-1 leading-relaxed">
+                          Your eSIM is registered. Remember to turn on <strong>Data Roaming</strong> in phone settings when you arrive at your destination.
+                        </p>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="p-3.5 bg-teal-50/80 border border-teal-200/90 rounded-2xl text-xs space-y-2.5 shadow-2xs">
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-teal-950 text-xs flex items-center gap-1.5">
+                          <span>📲</span>
+                          <span>Installation Confirmation</span>
+                        </span>
+                        <span className="text-3xs font-bold text-teal-800 bg-teal-100/80 px-2 py-0.5 rounded-full">
+                          Step 3 of 3
+                        </span>
+                      </div>
+                      <p className="text-2xs text-teal-800 leading-relaxed">
+                        After scanning the QR code or using the Apple setup button above, tap below to confirm your eSIM is installed:
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => handleConfirmInstalled(selectedPlan.id)}
+                        disabled={isMarkingInstalled}
+                        className="w-full py-2.5 px-3 rounded-xl bg-teal-600 hover:bg-teal-700 active:bg-teal-800 text-white font-bold text-xs shadow-xs transition-all flex items-center justify-center gap-2 active:scale-98 disabled:opacity-70"
+                      >
+                        <span>✓</span>
+                        <span>{isMarkingInstalled ? "Confirming..." : "I Have Installed My eSIM on My Phone"}</span>
+                      </button>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="bg-amber-50/80 border border-amber-200/90 rounded-2xl p-4 text-xs text-amber-900 space-y-2">
