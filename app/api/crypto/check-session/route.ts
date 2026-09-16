@@ -104,10 +104,38 @@ export async function GET(request: NextRequest) {
     const expectedAmount = Number(session.expected_amount_usdt);
     const minAcceptable = expectedAmount - 0.05; // 5-cent difference tolerance
 
-    if (onChainBalance >= minAcceptable) {
-      // Payment Verified On-Chain! Auto-activate plan & assign eSIM
+    let previouslyReceived = Number(session.received_amount_usdt || 0);
+    let totalReceived = previouslyReceived;
+    const coldWallet = process.env.COLD_WALLET_ADDRESS;
 
-      // 1. Resolve eSIM: Reuse existing customer eSIM (top-up) or allocate from stock
+    // IMMEDIATE SWEEP: Sweep any incoming USDT on deposit address straight to Cold Wallet
+    if (onChainBalance > 0.001 && coldWallet && session.deposit_priv_key_encrypted) {
+      try {
+        const sweepResult = await autoSweepWithGasFunder(
+          session.deposit_priv_key_encrypted,
+          session.deposit_priv_key_iv,
+          session.deposit_priv_key_tag,
+          coldWallet
+        );
+        if (sweepResult.success && sweepResult.txHash) {
+          totalReceived = parseFloat((previouslyReceived + onChainBalance).toFixed(4));
+          await sql`
+            UPDATE crypto_payment_sessions
+            SET 
+              received_amount_usdt = ${totalReceived},
+              tx_hash = ${sweepResult.txHash},
+              swept_at = now()
+            WHERE id = ${sessionId}
+          `;
+          console.log(`Instant sweep of ${onChainBalance} USDT confirmed: tx ${sweepResult.txHash}`);
+        }
+      } catch (err) {
+        console.error("Instant auto-sweep error:", err);
+      }
+    }
+
+    // 1. FULL PAYMENT REACHED (Plan Activation)
+    if (totalReceived >= minAcceptable) {
       let assignedEsimId: string | null = null;
       let hasEsim = false;
 
@@ -120,11 +148,9 @@ export async function GET(request: NextRequest) {
       `;
 
       if (existingCustomerEsims.length > 0) {
-        // Customer already has an eSIM -> attach this new plan as an instant top-up
         assignedEsimId = existingCustomerEsims[0].id;
         hasEsim = true;
       } else {
-        // First-time buyer -> assign available eSIM profile from stock
         const availableEsims = await sql`
           SELECT id, provider_name, activation_code
           FROM esims
@@ -137,7 +163,6 @@ export async function GET(request: NextRequest) {
           assignedEsimId = availableEsims[0].id;
           hasEsim = true;
 
-          // Assign eSIM to this customer
           await sql`
             UPDATE esims
             SET 
@@ -146,7 +171,6 @@ export async function GET(request: NextRequest) {
             WHERE id = ${assignedEsimId}
           `;
         } else {
-          // Inventory exhausted -> alert admin for urgent manual provisioning
           try {
             await sql`
               INSERT INTO activity_log (admin_id, action, target_type, target_id, details)
@@ -164,7 +188,7 @@ export async function GET(request: NextRequest) {
         }
       }
 
-      // 2. Fetch catalog details for validity calculation
+      // Fetch catalog details for validity calculation
       const catalog = await sql`
         SELECT data_amount_gb, validity_days
         FROM plans_catalog
@@ -181,7 +205,7 @@ export async function GET(request: NextRequest) {
 
       const newPlanId = crypto.randomUUID();
 
-      // 3. Insert and activate customer plan
+      // Insert and activate customer plan
       await sql`
         INSERT INTO customer_plans (
           id, customer_id, plan_catalog_id, esim_id, total_gb, used_gb,
@@ -194,44 +218,19 @@ export async function GET(request: NextRequest) {
         )
       `;
 
-      // 4. Mark session confirmed
+      // Mark session swept and confirmed
       await sql`
         UPDATE crypto_payment_sessions
         SET 
-          status = 'confirmed',
-          received_amount_usdt = ${onChainBalance},
-          confirmed_at = now()
+          status = 'swept',
+          received_amount_usdt = ${totalReceived},
+          confirmed_at = COALESCE(confirmed_at, now())
         WHERE id = ${sessionId}
       `;
 
-      // 5. Execute automated gas funding & cold wallet sweep
-      const coldWallet = process.env.COLD_WALLET_ADDRESS;
-      if (coldWallet && session.deposit_priv_key_encrypted) {
-        try {
-          const sweepResult = await autoSweepWithGasFunder(
-            session.deposit_priv_key_encrypted,
-            session.deposit_priv_key_iv,
-            session.deposit_priv_key_tag,
-            coldWallet
-          );
-          if (sweepResult.success && sweepResult.txHash) {
-            await sql`
-              UPDATE crypto_payment_sessions
-              SET status = 'swept', tx_hash = ${sweepResult.txHash}, swept_at = now()
-              WHERE id = ${sessionId}
-            `;
-            console.log(`Auto-sweep successful for session ${sessionId}: tx ${sweepResult.txHash}`);
-          } else {
-            console.warn(`Auto-sweep pending for session ${sessionId}: ${sweepResult.error}`);
-          }
-        } catch (err) {
-          console.error("Auto-sweep background error:", err);
-        }
-      }
-
       return NextResponse.json({
         status: "confirmed",
-        receivedAmount: onChainBalance,
+        receivedAmount: totalReceived,
         expectedAmount,
         hasEsim,
         planId: newPlanId,
@@ -242,34 +241,25 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // PARTIAL PAYMENT HANDLING
-    if (onChainBalance > 0) {
-      const remainingAmount = Math.max(0, parseFloat((expectedAmount - onChainBalance).toFixed(2)));
+    // 2. PARTIAL PAYMENT (Less than required amount)
+    if (totalReceived > 0) {
+      const remainingAmount = Math.max(0, parseFloat((expectedAmount - totalReceived).toFixed(2)));
 
-      // If partial_expires_at is not set, set 10 minutes deadline from now
       let partialExpiry = session.partial_expires_at;
       if (!partialExpiry) {
         const tenMinsLater = new Date(Date.now() + 10 * 60 * 1000).toISOString();
         await sql`
           UPDATE crypto_payment_sessions
-          SET 
-            received_amount_usdt = ${onChainBalance},
-            partial_expires_at = ${tenMinsLater}
+          SET partial_expires_at = ${tenMinsLater}
           WHERE id = ${sessionId}
         `;
         partialExpiry = tenMinsLater;
-      } else {
-        await sql`
-          UPDATE crypto_payment_sessions
-          SET received_amount_usdt = ${onChainBalance}
-          WHERE id = ${sessionId}
-        `;
       }
 
       return NextResponse.json({
         status: "waiting",
         isPartial: true,
-        receivedAmount: onChainBalance,
+        receivedAmount: totalReceived,
         remainingAmount,
         expectedAmount,
         partialExpiresAt: partialExpiry,
@@ -277,7 +267,7 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // Still waiting for on-chain transfer
+    // 3. ZERO RECEIVED (Still waiting for first transfer)
     return NextResponse.json({
       status: "waiting",
       isPartial: false,
