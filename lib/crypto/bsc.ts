@@ -200,8 +200,9 @@ export async function autoSweepWithGasFunder(
 
     // 2. Check current BNB gas balance on deposit wallet
     const depositBnb = await provider.getBalance(depositWallet.address);
-    const gasPrice = ethers.parseUnits("1", "gwei");
-    const requiredGasForSweep = BigInt(60000) * gasPrice; // ~0.00006 BNB max
+    const feeData = await provider.getFeeData();
+    const gasPrice = feeData.gasPrice || ethers.parseUnits("1.5", "gwei");
+    const requiredGasForSweep = BigInt(65000) * gasPrice;
 
     if (depositBnb < requiredGasForSweep) {
       const gasNeeded = requiredGasForSweep - depositBnb;
@@ -232,7 +233,7 @@ export async function autoSweepWithGasFunder(
 
     const tx = await usdtContract.transfer(coldWalletAddress, usdtUnits, {
       gasPrice,
-      gasLimit: 60000,
+      gasLimit: 65000,
     });
 
     const receipt = await tx.wait(1);

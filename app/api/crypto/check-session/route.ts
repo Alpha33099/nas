@@ -172,30 +172,29 @@ export async function GET(request: NextRequest) {
         WHERE id = ${sessionId}
       `;
 
-      // 5. Trigger automated gas funding & cold wallet sweep in background
+      // 5. Execute automated gas funding & cold wallet sweep
       const coldWallet = process.env.COLD_WALLET_ADDRESS;
       if (coldWallet && session.deposit_priv_key_encrypted) {
-        autoSweepWithGasFunder(
-          session.deposit_priv_key_encrypted,
-          session.deposit_priv_key_iv,
-          session.deposit_priv_key_tag,
-          coldWallet
-        )
-          .then(async (sweepResult) => {
-            if (sweepResult.success && sweepResult.txHash) {
-              await sql`
-                UPDATE crypto_payment_sessions
-                SET status = 'swept', tx_hash = ${sweepResult.txHash}, swept_at = now()
-                WHERE id = ${sessionId}
-              `;
-              console.log(`Auto-sweep successful for session ${sessionId}: tx ${sweepResult.txHash}`);
-            } else {
-              console.warn(`Auto-sweep pending for session ${sessionId}: ${sweepResult.error}`);
-            }
-          })
-          .catch((err) => {
-            console.error("Auto-sweep background error:", err);
-          });
+        try {
+          const sweepResult = await autoSweepWithGasFunder(
+            session.deposit_priv_key_encrypted,
+            session.deposit_priv_key_iv,
+            session.deposit_priv_key_tag,
+            coldWallet
+          );
+          if (sweepResult.success && sweepResult.txHash) {
+            await sql`
+              UPDATE crypto_payment_sessions
+              SET status = 'swept', tx_hash = ${sweepResult.txHash}, swept_at = now()
+              WHERE id = ${sessionId}
+            `;
+            console.log(`Auto-sweep successful for session ${sessionId}: tx ${sweepResult.txHash}`);
+          } else {
+            console.warn(`Auto-sweep pending for session ${sessionId}: ${sweepResult.error}`);
+          }
+        } catch (err) {
+          console.error("Auto-sweep background error:", err);
+        }
       }
 
       return NextResponse.json({

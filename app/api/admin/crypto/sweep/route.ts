@@ -1,6 +1,6 @@
 import { sql } from "@/lib/db";
 import { verifyAdminToken } from "@/lib/auth";
-import { sweepDepositWallet } from "@/lib/crypto/bsc";
+import { autoSweepWithGasFunder } from "@/lib/crypto/bsc";
 import { NextRequest, NextResponse } from "next/server";
 
 export async function POST(request: NextRequest) {
@@ -43,7 +43,7 @@ export async function POST(request: NextRequest) {
     const sweepResults = [];
 
     for (const session of unsweptSessions) {
-      const result = await sweepDepositWallet(
+      const result = await autoSweepWithGasFunder(
         session.deposit_priv_key_encrypted,
         session.deposit_priv_key_iv,
         session.deposit_priv_key_tag,
