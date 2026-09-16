@@ -14,8 +14,16 @@ const BSC_RPC_ENDPOINTS = [
 ];
 
 // Master encryption key for deposit wallet private keys
+const DEV_FALLBACK_CRYPTO_SECRET = "simvaya-bep20-master-crypto-secret-32-chars!!";
+
 function getMasterSecret(): Buffer {
-  const secret = process.env.CRYPTO_MASTER_SECRET || "simvaya-bep20-master-crypto-secret-32-chars!!";
+  const secret = process.env.CRYPTO_MASTER_SECRET;
+  if (!secret) {
+    if (process.env.NODE_ENV === "production") {
+      throw new Error("FATAL: CRYPTO_MASTER_SECRET environment variable must be configured in production.");
+    }
+    return crypto.createHash("sha256").update(DEV_FALLBACK_CRYPTO_SECRET).digest();
+  }
   return crypto.createHash("sha256").update(secret).digest();
 }
 

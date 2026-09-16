@@ -1,16 +1,30 @@
 import { sql } from "@/lib/db";
 import { checkBscUsdtBalance, autoSweepWithGasFunder } from "@/lib/crypto/bsc";
+import { CryptoCheckSessionSchema, validateBody } from "@/lib/security/schemas";
+import { getClientIp, checkStandardRateLimit } from "@/lib/security/rate-limit";
+import { safeErrorResponse } from "@/lib/security/errors";
 import crypto from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 
 export async function GET(request: NextRequest) {
-  try {
-    const { searchParams } = new URL(request.url);
-    const sessionId = searchParams.get("sessionId");
+  const clientIp = getClientIp(request);
 
-    if (!sessionId) {
-      return NextResponse.json({ error: "Session ID is required." }, { status: 400 });
+  try {
+    // 1. Rate Limiting
+    const rateCheck = checkStandardRateLimit("public", clientIp);
+    if (!rateCheck.allowed) {
+      return rateCheck.response;
     }
+
+    const { searchParams } = new URL(request.url);
+    const rawSessionId = searchParams.get("sessionId");
+
+    // 2. Strict Schema Validation
+    const validation = validateBody(CryptoCheckSessionSchema, { sessionId: rawSessionId });
+    if (!validation.success) {
+      return validation.response;
+    }
+    const { sessionId } = validation.data;
 
     // Look up session
     const sessions = await sql`
@@ -174,10 +188,9 @@ export async function GET(request: NextRequest) {
       expiresAt: session.expires_at,
     });
   } catch (error) {
-    console.error("Check crypto session error:", error);
-    return NextResponse.json(
-      { error: "Failed to verify session status." },
-      { status: 500 }
-    );
+    return safeErrorResponse(error, {
+      clientMessage: "Failed to verify session status. Please try again.",
+      context: { clientIp },
+    });
   }
 }

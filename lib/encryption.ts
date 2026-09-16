@@ -1,9 +1,15 @@
 import crypto from "crypto";
 
-const DEFAULT_ENCRYPTION_KEY = "8292d5675e321b329a0920b3868b96f9db0a35f1ee5f9f252565664bdd8c553a";
+const DEV_FALLBACK_ENCRYPTION_KEY = "8292d5675e321b329a0920b3868b96f9db0a35f1ee5f9f252565664bdd8c553a";
 
 function getEncryptionKey(): Buffer {
-  const key = process.env.ESIM_CREDENTIALS_ENCRYPTION_KEY || DEFAULT_ENCRYPTION_KEY;
+  const key = process.env.ESIM_CREDENTIALS_ENCRYPTION_KEY;
+  if (!key) {
+    if (process.env.NODE_ENV === "production") {
+      throw new Error("FATAL: ESIM_CREDENTIALS_ENCRYPTION_KEY environment variable must be configured in production.");
+    }
+    return Buffer.from(DEV_FALLBACK_ENCRYPTION_KEY, "hex");
+  }
   return Buffer.from(key, "hex");
 }
 /**

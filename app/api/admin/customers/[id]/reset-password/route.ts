@@ -1,25 +1,52 @@
 import { sql } from "@/lib/db";
 import { verifyAdminToken } from "@/lib/auth";
+import { getClientIp, checkStandardRateLimit } from "@/lib/security/rate-limit";
+import { safeErrorResponse } from "@/lib/security/errors";
+import { z } from "zod";
+import { validateBody } from "@/lib/security/schemas";
 import bcrypt from "bcryptjs";
 import { NextRequest, NextResponse } from "next/server";
+
+const ResetPasswordInputSchema = z
+  .object({
+    password: z
+      .string()
+      .min(6, "Password must be at least 6 characters.")
+      .max(128, "Password cannot exceed 128 characters."),
+  })
+  .strict();
 
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const clientIp = getClientIp(request);
+
   try {
     const admin = await verifyAdminToken();
     if (!admin) {
       return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
     }
 
-    const { id } = await params;
-    const body = await request.json();
-    const { password } = body;
-
-    if (!password) {
-      return NextResponse.json({ error: "Password is required." }, { status: 400 });
+    // 1. Authenticated rate limit
+    const rateCheck = checkStandardRateLimit("authenticated", admin.id);
+    if (!rateCheck.allowed) {
+      return rateCheck.response;
     }
+
+    const { id } = await params;
+    if (!id || !/^[a-zA-Z0-9-]+$/.test(id) || id.length > 64) {
+      return NextResponse.json({ error: "Invalid customer ID." }, { status: 400 });
+    }
+
+    const rawBody = await request.json();
+
+    // 2. Strict Schema Validation
+    const validation = validateBody(ResetPasswordInputSchema, rawBody);
+    if (!validation.success) {
+      return validation.response;
+    }
+    const { password } = validation.data;
 
     // Verify customer exists
     const customer = await sql`SELECT id, username FROM customers WHERE id = ${id}`;
@@ -39,7 +66,9 @@ export async function POST(
 
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error("Reset password error:", error);
-    return NextResponse.json({ error: "Something went wrong." }, { status: 500 });
+    return safeErrorResponse(error, {
+      clientMessage: "Failed to reset password. Please try again.",
+      context: { clientIp },
+    });
   }
 }

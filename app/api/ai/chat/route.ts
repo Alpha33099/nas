@@ -4,19 +4,28 @@ import { countries } from "@/data/countries";
 import { devices } from "@/data/devices";
 import { faqs } from "@/data/faqs";
 import { siteConfig } from "@/config/site";
+import { AiChatSchema, validateBody } from "@/lib/security/schemas";
+import { getClientIp, checkStandardRateLimit } from "@/lib/security/rate-limit";
+import { safeErrorResponse } from "@/lib/security/errors";
 
 export async function POST(req: NextRequest) {
+  const clientIp = getClientIp(req);
+
   try {
-    const body = await req.json();
-    const { message, conversation } = body;
-
-    if (!message || typeof message !== "string" || message.trim().length === 0) {
-      return NextResponse.json({ error: "Message cannot be empty." }, { status: 400 });
+    // 1. Public rate limiting
+    const rateCheck = checkStandardRateLimit("public", clientIp);
+    if (!rateCheck.allowed) {
+      return rateCheck.response;
     }
 
-    if (message.length > 1000) {
-      return NextResponse.json({ error: "Message is too long." }, { status: 400 });
+    const rawBody = await req.json();
+
+    // 2. Strict Schema Validation
+    const validation = validateBody(AiChatSchema, rawBody);
+    if (!validation.success) {
+      return validation.response;
     }
+    const { message, conversation } = validation.data;
 
     // Fetch live plans from database for AI context
     let plansData: any[] = [];
@@ -126,10 +135,9 @@ ${JSON.stringify(faqs, null, 2)}
       reply: "Thank you for reaching out! You can explore all our high-speed eSIM plans in our Plans catalog, or chat directly with our team on Instagram (@simvaya21) to get your eSIM QR code instantly!",
     });
   } catch (error) {
-    console.error("AI chat handler error:", error);
-    return NextResponse.json(
-      { error: "Simwaya AI is temporarily unavailable." },
-      { status: 500 }
-    );
+    return safeErrorResponse(error, {
+      clientMessage: "Simwaya AI is temporarily unavailable. Please try again shortly.",
+      context: { clientIp },
+    });
   }
 }

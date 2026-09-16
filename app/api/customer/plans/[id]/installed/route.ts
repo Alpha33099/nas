@@ -1,20 +1,31 @@
 import { sql } from "@/lib/db";
 import { verifyCustomerToken } from "@/lib/auth";
+import { getClientIp, checkStandardRateLimit } from "@/lib/security/rate-limit";
+import { safeErrorResponse } from "@/lib/security/errors";
 import { NextRequest, NextResponse } from "next/server";
 
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const clientIp = getClientIp(request);
+
   try {
     const customer = await verifyCustomerToken();
     if (!customer) {
       return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
     }
 
+    // 1. Authenticated rate limit
+    const rateCheck = checkStandardRateLimit("authenticated", customer.id);
+    if (!rateCheck.allowed) {
+      return rateCheck.response;
+    }
+
     const { id: planId } = await params;
-    if (!planId) {
-      return NextResponse.json({ error: "Plan ID is required." }, { status: 400 });
+    // 2. Strict ID format validation
+    if (!planId || !/^[a-zA-Z0-9-]+$/.test(planId) || planId.length > 64) {
+      return NextResponse.json({ error: "Invalid Plan ID format." }, { status: 400 });
     }
 
     // Verify ownership and update
@@ -40,10 +51,9 @@ export async function POST(
       installedAt: result[0].installed_at,
     });
   } catch (error) {
-    console.error("Confirm eSIM installation error:", error);
-    return NextResponse.json(
-      { error: "Failed to confirm installation." },
-      { status: 500 }
-    );
+    return safeErrorResponse(error, {
+      clientMessage: "Failed to confirm installation. Please try again.",
+      context: { clientIp },
+    });
   }
 }

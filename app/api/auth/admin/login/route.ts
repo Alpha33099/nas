@@ -1,19 +1,33 @@
 import { sql } from "@/lib/db";
 import { createAdminToken, setAdminCookie } from "@/lib/auth";
+import { AdminLoginSchema, validateBody } from "@/lib/security/schemas";
+import {
+  getClientIp,
+  checkAuthRateLimit,
+  recordAuthFailure,
+  recordAuthSuccess,
+} from "@/lib/security/rate-limit";
+import { safeErrorResponse } from "@/lib/security/errors";
 import bcrypt from "bcryptjs";
 import { NextRequest, NextResponse } from "next/server";
 
 export async function POST(request: NextRequest) {
-  try {
-    const body = await request.json();
-    const { username, password } = body;
+  const clientIp = getClientIp(request);
 
-    // Validate input
-    if (!username || !password) {
-      return NextResponse.json(
-        { error: "Username and password are required." },
-        { status: 400 }
-      );
+  try {
+    const rawBody = await request.json();
+
+    // 1. Strict Schema Validation (rejection of unexpected properties, format & length check)
+    const validation = validateBody(AdminLoginSchema, rawBody);
+    if (!validation.success) {
+      return validation.response;
+    }
+    const { username, password } = validation.data;
+
+    // 2. Dual IP & Account Rate Limiting with Exponential Backoff
+    const rateCheck = checkAuthRateLimit(clientIp, username);
+    if (!rateCheck.allowed) {
+      return rateCheck.response;
     }
 
     // Look up the admin by username
@@ -25,6 +39,7 @@ export async function POST(request: NextRequest) {
 
     // If no admin found, return generic error
     if (admins.length === 0) {
+      recordAuthFailure(clientIp, username);
       return NextResponse.json(
         { error: "Invalid username or password." },
         { status: 401 }
@@ -37,11 +52,15 @@ export async function POST(request: NextRequest) {
     const passwordMatch = await bcrypt.compare(password, admin.password_hash);
 
     if (!passwordMatch) {
+      recordAuthFailure(clientIp, username);
       return NextResponse.json(
         { error: "Invalid username or password." },
         { status: 401 }
       );
     }
+
+    // Successful authentication: clear failure rate limit counters
+    recordAuthSuccess(clientIp, username);
 
     // Create JWT token and set cookie
     const token = createAdminToken({
@@ -56,11 +75,9 @@ export async function POST(request: NextRequest) {
       message: "Login successful.",
     });
   } catch (error) {
-    console.error("Admin login error:", error);
-    const msg = error instanceof Error ? error.message : "Something went wrong. Please try again.";
-    return NextResponse.json(
-      { error: msg },
-      { status: 500 }
-    );
+    return safeErrorResponse(error, {
+      clientMessage: "An error occurred during administrative sign-in. Please try again.",
+      context: { clientIp },
+    });
   }
 }

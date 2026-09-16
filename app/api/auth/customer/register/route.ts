@@ -1,37 +1,37 @@
 import { sql } from "@/lib/db";
 import { createCustomerToken, setCustomerCookie } from "@/lib/auth";
+import { CustomerRegisterSchema, validateBody } from "@/lib/security/schemas";
+import {
+  getClientIp,
+  checkAuthRateLimit,
+  recordAuthFailure,
+  recordAuthSuccess,
+} from "@/lib/security/rate-limit";
+import { safeErrorResponse } from "@/lib/security/errors";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 
 export async function POST(request: NextRequest) {
+  const clientIp = getClientIp(request);
+
   try {
-    const body = await request.json();
-    const { username, password, displayName } = body;
+    const rawBody = await request.json();
 
-    // Validate inputs
-    if (!username || !password) {
-      return NextResponse.json(
-        { error: "Username and password are required." },
-        { status: 400 }
-      );
+    // 1. Strict Schema Validation (rejection of unexpected properties, format & length check)
+    const validation = validateBody(CustomerRegisterSchema, rawBody);
+    if (!validation.success) {
+      return validation.response;
+    }
+    const { username, password, displayName } = validation.data;
+
+    // 2. Dual IP & Account Rate Limiting with Exponential Backoff
+    const rateCheck = checkAuthRateLimit(clientIp, username);
+    if (!rateCheck.allowed) {
+      return rateCheck.response;
     }
 
-    const cleanUsername = username.trim().toLowerCase().replace(/[^a-z0-9_.-]/g, "");
-    if (cleanUsername.length < 3) {
-      return NextResponse.json(
-        { error: "Username must be at least 3 characters (letters, numbers, underscores)." },
-        { status: 400 }
-      );
-    }
-
-    if (password.length < 6) {
-      return NextResponse.json(
-        { error: "Password must be at least 6 characters long." },
-        { status: 400 }
-      );
-    }
-
+    const cleanUsername = username.toLowerCase();
     const cleanDisplayName = displayName?.trim() || cleanUsername;
 
     // Check if username already exists
@@ -40,6 +40,7 @@ export async function POST(request: NextRequest) {
     `;
 
     if (existing.length > 0) {
+      recordAuthFailure(clientIp, username);
       return NextResponse.json(
         { error: "This username is already taken. Please choose another or sign in." },
         { status: 409 }
@@ -59,6 +60,9 @@ export async function POST(request: NextRequest) {
       )
     `;
 
+    // Registration succeeded: clear failure counter
+    recordAuthSuccess(clientIp, username);
+
     // Log the user in with authentication session cookie
     const token = createCustomerToken({
       id: customerId,
@@ -76,10 +80,9 @@ export async function POST(request: NextRequest) {
       },
     });
   } catch (error) {
-    console.error("Customer registration error:", error);
-    return NextResponse.json(
-      { error: "Registration failed. Please try again." },
-      { status: 500 }
-    );
+    return safeErrorResponse(error, {
+      clientMessage: "Registration failed. Please try again.",
+      context: { clientIp },
+    });
   }
 }

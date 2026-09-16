@@ -1,25 +1,38 @@
 import { sql } from "@/lib/db";
 import { verifyCustomerToken } from "@/lib/auth";
 import { resolveLocation, parseDeviceSummary } from "@/lib/geo";
+import { CustomerLocationSchema, validateBody } from "@/lib/security/schemas";
+import { getClientIp, checkStandardRateLimit } from "@/lib/security/rate-limit";
+import { safeErrorResponse } from "@/lib/security/errors";
 import { NextRequest, NextResponse } from "next/server";
 
 export async function POST(request: NextRequest) {
+  const clientIp = getClientIp(request);
+
   try {
     const customer = await verifyCustomerToken();
     if (!customer) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const body = await request.json();
-    const { gpsLat, gpsLon, gpsAccuracy } = body;
+    // 1. Authenticated rate limit per customer
+    const rateCheck = checkStandardRateLimit("authenticated", customer.id);
+    if (!rateCheck.allowed) {
+      return rateCheck.response;
+    }
 
-    const parsedLat = typeof gpsLat === "number" ? gpsLat : parseFloat(gpsLat);
-    const parsedLon = typeof gpsLon === "number" ? gpsLon : parseFloat(gpsLon);
-    const parsedAcc = typeof gpsAccuracy === "number" ? gpsAccuracy : parseFloat(gpsAccuracy);
+    const rawBody = await request.json();
+
+    // 2. Strict Schema Validation (rejection of unexpected properties)
+    const validation = validateBody(CustomerLocationSchema, rawBody);
+    if (!validation.success) {
+      return validation.response;
+    }
+    const { gpsLat, gpsLon, gpsAccuracy } = validation.data;
 
     const gpsData =
-      !isNaN(parsedLat) && !isNaN(parsedLon) && parsedLat !== 0 && parsedLon !== 0
-        ? { lat: parsedLat, lon: parsedLon, accuracy: !isNaN(parsedAcc) ? parsedAcc : undefined }
+      gpsLat !== undefined && gpsLon !== undefined && gpsLat !== 0 && gpsLon !== 0
+        ? { lat: gpsLat, lon: gpsLon, accuracy: gpsAccuracy }
         : null;
 
     const loc = await resolveLocation(request.headers, gpsData);
@@ -127,7 +140,9 @@ export async function POST(request: NextRequest) {
       coords: loc.coords,
     });
   } catch (error) {
-    console.error("Location update error:", error);
-    return NextResponse.json({ error: "Failed to update location" }, { status: 500 });
+    return safeErrorResponse(error, {
+      clientMessage: "Failed to update location.",
+      context: { clientIp },
+    });
   }
 }

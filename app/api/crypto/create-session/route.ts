@@ -1,11 +1,22 @@
 import { sql } from "@/lib/db";
 import { verifyCustomerToken } from "@/lib/auth";
 import { generateDepositWallet, encryptPrivateKey } from "@/lib/crypto/bsc";
+import { CryptoCreateSessionSchema, validateBody } from "@/lib/security/schemas";
+import { getClientIp, checkStandardRateLimit } from "@/lib/security/rate-limit";
+import { safeErrorResponse } from "@/lib/security/errors";
 import crypto from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 
 export async function POST(request: NextRequest) {
+  const clientIp = getClientIp(request);
+
   try {
+    // 1. Rate Limiting
+    const rateCheck = checkStandardRateLimit("public", clientIp);
+    if (!rateCheck.allowed) {
+      return rateCheck.response;
+    }
+
     const customer = await verifyCustomerToken();
     if (!customer) {
       return NextResponse.json(
@@ -14,12 +25,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const body = await request.json();
-    const { planId } = body;
+    const rawBody = await request.json();
 
-    if (!planId) {
-      return NextResponse.json({ error: "Plan ID is required." }, { status: 400 });
+    // 2. Strict Schema Validation (rejection of unexpected properties)
+    const validation = validateBody(CryptoCreateSessionSchema, rawBody);
+    if (!validation.success) {
+      return validation.response;
     }
+    const { planId } = validation.data;
 
     // Ensure crypto_payment_sessions table exists
     await sql`
@@ -97,10 +110,9 @@ export async function POST(request: NextRequest) {
       expiresAt: expiresAt.toISOString(),
     });
   } catch (error) {
-    console.error("Create crypto session error:", error);
-    return NextResponse.json(
-      { error: "Failed to generate crypto payment session." },
-      { status: 500 }
-    );
+    return safeErrorResponse(error, {
+      clientMessage: "Failed to generate crypto payment session. Please try again.",
+      context: { clientIp },
+    });
   }
 }

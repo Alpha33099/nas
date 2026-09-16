@@ -1,6 +1,9 @@
 import { sql } from "@/lib/db";
 import { verifyAdminToken } from "@/lib/auth";
 import { encrypt, decrypt } from "@/lib/encryption";
+import { AdminCreateEsimSchema, validateBody } from "@/lib/security/schemas";
+import { getClientIp, checkStandardRateLimit } from "@/lib/security/rate-limit";
+import { safeErrorResponse } from "@/lib/security/errors";
 import { NextRequest, NextResponse } from "next/server";
 
 // GET — Fetch all eSIMs (with decrypted credentials for admin view/edit)
@@ -49,28 +52,34 @@ export async function GET() {
 
     return NextResponse.json({ success: true, esims: decryptedEsims });
   } catch (error) {
-    console.error("Fetch eSIMs error:", error);
-    return NextResponse.json({ error: "Something went wrong." }, { status: 500 });
+    return safeErrorResponse(error, { clientMessage: "Failed to fetch eSIMs inventory." });
   }
 }
 
 // POST — Create a new standalone eSIM
 export async function POST(request: NextRequest) {
+  const clientIp = getClientIp(request);
+
   try {
     const admin = await verifyAdminToken();
     if (!admin) {
       return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
     }
 
-    const body = await request.json();
-    const { provider_name, provider_email, provider_password, activation_code, notes } = body;
-
-    if (!provider_name || !provider_email || !provider_password) {
-      return NextResponse.json(
-        { error: "Provider name, email, and password are required." },
-        { status: 400 }
-      );
+    // 1. Authenticated rate limit
+    const rateCheck = checkStandardRateLimit("authenticated", admin.id);
+    if (!rateCheck.allowed) {
+      return rateCheck.response;
     }
+
+    const rawBody = await request.json();
+
+    // 2. Strict Schema Validation
+    const validation = validateBody(AdminCreateEsimSchema, rawBody);
+    if (!validation.success) {
+      return validation.response;
+    }
+    const { provider_name, provider_email, provider_password, activation_code, notes } = validation.data;
 
     // Encrypt credentials
     const encryptedEmail = encrypt(provider_email);
@@ -90,24 +99,34 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ success: true, esim_id: newEsim[0].id });
   } catch (error) {
-    console.error("Create eSIM error:", error);
-    return NextResponse.json({ error: "Something went wrong." }, { status: 500 });
+    return safeErrorResponse(error, {
+      clientMessage: "Failed to create eSIM profile.",
+      context: { clientIp },
+    });
   }
 }
 
 // PUT — Update carrier info, credentials, LPA code, and status of an existing eSIM
 export async function PUT(request: NextRequest) {
+  const clientIp = getClientIp(request);
+
   try {
     const admin = await verifyAdminToken();
     if (!admin) {
       return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
     }
 
+    // 1. Authenticated rate limit
+    const rateCheck = checkStandardRateLimit("authenticated", admin.id);
+    if (!rateCheck.allowed) {
+      return rateCheck.response;
+    }
+
     const body = await request.json();
     const { id, provider_name, provider_email, provider_password, activation_code, notes, status } = body;
 
-    if (!id) {
-      return NextResponse.json({ error: "eSIM ID is required." }, { status: 400 });
+    if (!id || typeof id !== "string" || !/^[a-zA-Z0-9-]+$/.test(id)) {
+      return NextResponse.json({ error: "Valid eSIM ID is required." }, { status: 400 });
     }
 
     // Check existing eSIM
@@ -143,24 +162,34 @@ export async function PUT(request: NextRequest) {
 
     return NextResponse.json({ success: true, message: "eSIM updated successfully." });
   } catch (error) {
-    console.error("Update eSIM error:", error);
-    return NextResponse.json({ error: "Failed to update eSIM." }, { status: 500 });
+    return safeErrorResponse(error, {
+      clientMessage: "Failed to update eSIM profile.",
+      context: { clientIp },
+    });
   }
 }
 
 // DELETE — Delete an existing eSIM
 export async function DELETE(request: NextRequest) {
+  const clientIp = getClientIp(request);
+
   try {
     const admin = await verifyAdminToken();
     if (!admin) {
       return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
     }
 
+    // 1. Authenticated rate limit
+    const rateCheck = checkStandardRateLimit("authenticated", admin.id);
+    if (!rateCheck.allowed) {
+      return rateCheck.response;
+    }
+
     const { searchParams } = new URL(request.url);
     const id = searchParams.get("id");
 
-    if (!id) {
-      return NextResponse.json({ error: "eSIM ID is required." }, { status: 400 });
+    if (!id || !/^[a-zA-Z0-9-]+$/.test(id)) {
+      return NextResponse.json({ error: "Valid eSIM ID is required." }, { status: 400 });
     }
 
     const existing = await sql`SELECT id, provider_name FROM esims WHERE id = ${id}`;
@@ -182,7 +211,9 @@ export async function DELETE(request: NextRequest) {
 
     return NextResponse.json({ success: true, message: "eSIM deleted successfully." });
   } catch (error) {
-    console.error("Delete eSIM error:", error);
-    return NextResponse.json({ error: "Failed to delete eSIM." }, { status: 500 });
+    return safeErrorResponse(error, {
+      clientMessage: "Failed to delete eSIM profile.",
+      context: { clientIp },
+    });
   }
 }

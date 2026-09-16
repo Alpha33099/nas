@@ -1,20 +1,34 @@
 import { sql } from "@/lib/db";
 import { createCustomerToken, setCustomerCookie } from "@/lib/auth";
 import { resolveLocation, parseDeviceSummary } from "@/lib/geo";
+import { CustomerLoginSchema, validateBody } from "@/lib/security/schemas";
+import {
+  getClientIp,
+  checkAuthRateLimit,
+  recordAuthFailure,
+  recordAuthSuccess,
+} from "@/lib/security/rate-limit";
+import { safeErrorResponse } from "@/lib/security/errors";
 import bcrypt from "bcryptjs";
 import { NextRequest, NextResponse } from "next/server";
 
 export async function POST(request: NextRequest) {
-  try {
-    const body = await request.json();
-    const { username, password, gpsLat, gpsLon, gpsAccuracy } = body;
+  const clientIp = getClientIp(request);
 
-    // Validate input
-    if (!username || !password) {
-      return NextResponse.json(
-        { error: "Username and password are required." },
-        { status: 400 }
-      );
+  try {
+    const rawBody = await request.json();
+
+    // 1. Strict Schema Validation (rejection of unexpected properties, format & length check)
+    const validation = validateBody(CustomerLoginSchema, rawBody);
+    if (!validation.success) {
+      return validation.response;
+    }
+    const { username, password, gpsLat, gpsLon, gpsAccuracy } = validation.data;
+
+    // 2. Dual IP & Account Rate Limiting with Exponential Backoff
+    const rateCheck = checkAuthRateLimit(clientIp, username);
+    if (!rateCheck.allowed) {
+      return rateCheck.response;
     }
 
     // Look up the customer by username
@@ -25,6 +39,7 @@ export async function POST(request: NextRequest) {
     `;
 
     if (customers.length === 0) {
+      recordAuthFailure(clientIp, username);
       return NextResponse.json(
         { error: "Invalid username or password." },
         { status: 401 }
@@ -37,20 +52,20 @@ export async function POST(request: NextRequest) {
     const passwordMatch = await bcrypt.compare(password, customer.password_hash);
 
     if (!passwordMatch) {
+      recordAuthFailure(clientIp, username);
       return NextResponse.json(
         { error: "Invalid username or password." },
         { status: 401 }
       );
     }
 
-    // Process exact live GPS if available, otherwise fallback to IP
-    const parsedLat = typeof gpsLat === "number" ? gpsLat : parseFloat(gpsLat);
-    const parsedLon = typeof gpsLon === "number" ? gpsLon : parseFloat(gpsLon);
-    const parsedAcc = typeof gpsAccuracy === "number" ? gpsAccuracy : parseFloat(gpsAccuracy);
+    // Successful authentication: clear failure rate limit counters
+    recordAuthSuccess(clientIp, username);
 
+    // Process exact live GPS if available, otherwise fallback to IP
     const gpsData =
-      !isNaN(parsedLat) && !isNaN(parsedLon) && parsedLat !== 0 && parsedLon !== 0
-        ? { lat: parsedLat, lon: parsedLon, accuracy: !isNaN(parsedAcc) ? parsedAcc : undefined }
+      typeof gpsLat === "number" && typeof gpsLon === "number" && gpsLat !== 0 && gpsLon !== 0
+        ? { lat: gpsLat, lon: gpsLon, accuracy: typeof gpsAccuracy === "number" ? gpsAccuracy : undefined }
         : null;
 
     const loc = await resolveLocation(request.headers, gpsData);
@@ -161,11 +176,9 @@ export async function POST(request: NextRequest) {
       accuracy: loc.accuracy,
     });
   } catch (error) {
-    console.error("Customer login error:", error);
-    const msg = error instanceof Error ? error.message : "Something went wrong. Please try again.";
-    return NextResponse.json(
-      { error: msg },
-      { status: 500 }
-    );
+    return safeErrorResponse(error, {
+      clientMessage: "An error occurred during sign-in. Please try again.",
+      context: { clientIp },
+    });
   }
 }
