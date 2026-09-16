@@ -43,6 +43,36 @@ export async function POST(
     expiryDate.setDate(expiryDate.getDate() + plan.validity_days);
     const expiryDateStr = expiryDate.toISOString().split("T")[0];
 
+    // Resolve target eSIM: validate provided eSIM or auto-link customer's existing eSIM
+    let targetEsimId: string | null = esim_id || null;
+
+    if (targetEsimId) {
+      const esimCheck = await sql`
+        SELECT id, status, assigned_customer_id FROM esims WHERE id = ${targetEsimId}
+      `;
+      if (esimCheck.length === 0) {
+        return NextResponse.json({ error: "Selected eSIM not found." }, { status: 404 });
+      }
+      if (esimCheck[0].status === "assigned" && esimCheck[0].assigned_customer_id && esimCheck[0].assigned_customer_id !== id) {
+        return NextResponse.json({ error: "Selected eSIM is already assigned to another customer." }, { status: 409 });
+      }
+
+      // Atomically assign eSIM to this customer
+      await sql`
+        UPDATE esims 
+        SET status = 'assigned', assigned_customer_id = ${id}
+        WHERE id = ${targetEsimId}
+      `;
+    } else {
+      // Auto-attach to customer's existing eSIM if one is already assigned
+      const existingEsim = await sql`
+        SELECT id FROM esims WHERE assigned_customer_id = ${id} LIMIT 1
+      `;
+      if (existingEsim.length > 0) {
+        targetEsimId = existingEsim[0].id;
+      }
+    }
+
     // Create customer plan
     const planId = crypto.randomUUID();
     await sql`
@@ -52,7 +82,7 @@ export async function POST(
         start_date, expiry_date, status
       )
       VALUES (
-        ${planId}, ${id}, ${plan_catalog_id}, ${esim_id || null}, ${plan.data_amount_gb}, 0,
+        ${planId}, ${id}, ${plan_catalog_id}, ${targetEsimId}, ${plan.data_amount_gb}, 0,
         0, now(), 0,
         ${start_date}, ${expiryDateStr}, 'active'
       )

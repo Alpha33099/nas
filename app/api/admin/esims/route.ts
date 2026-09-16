@@ -142,6 +142,14 @@ export async function PUT(request: NextRequest) {
     const encryptedEmail = provider_email ? encrypt(provider_email) : current.provider_email_encrypted;
     const encryptedPassword = provider_password ? encrypt(provider_password) : current.provider_password_encrypted;
 
+    const newStatus = status || current.status;
+    const isNowAvailable = newStatus === "available";
+    const targetCustomerId = isNowAvailable
+      ? null
+      : body.assigned_customer_id !== undefined
+      ? (body.assigned_customer_id || null)
+      : current.assigned_customer_id;
+
     await sql`
       UPDATE esims
       SET 
@@ -150,9 +158,14 @@ export async function PUT(request: NextRequest) {
         provider_password_encrypted = ${encryptedPassword},
         activation_code = ${activation_code !== undefined ? (activation_code || null) : current.activation_code},
         notes = ${notes !== undefined ? (notes || null) : current.notes},
-        status = ${status || current.status}
+        status = ${newStatus},
+        assigned_customer_id = ${targetCustomerId}
       WHERE id = ${id}
     `;
+
+    if (isNowAvailable) {
+      await sql`UPDATE customer_plans SET esim_id = NULL WHERE esim_id = ${id}`;
+    }
 
     // Log the update
     await sql`

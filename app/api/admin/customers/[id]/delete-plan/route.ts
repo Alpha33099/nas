@@ -26,17 +26,37 @@ export async function DELETE(
       return NextResponse.json({ error: "Customer not found." }, { status: 404 });
     }
 
-    // Verify plan exists
+    // Verify plan exists and inspect linked eSIM
     const plan = await sql`
-      SELECT id, total_gb FROM customer_plans
+      SELECT id, total_gb, esim_id FROM customer_plans
       WHERE id = ${planId} AND customer_id = ${id}
     `;
     if (plan.length === 0) {
       return NextResponse.json({ error: "Plan not found for this customer." }, { status: 404 });
     }
 
+    const linkedEsimId = plan[0].esim_id;
+
     // Delete customer plan
     await sql`DELETE FROM customer_plans WHERE id = ${planId} AND customer_id = ${id}`;
+
+    // If an eSIM was linked, check if any other plans for this customer still use it
+    if (linkedEsimId) {
+      const remainingPlans = await sql`
+        SELECT count(*) as count FROM customer_plans
+        WHERE customer_id = ${id} AND esim_id = ${linkedEsimId}
+      `;
+      const remainingCount = Number(remainingPlans[0]?.count || 0);
+
+      // If no other plans reference this eSIM, release it back to available stock
+      if (remainingCount === 0) {
+        await sql`
+          UPDATE esims 
+          SET status = 'available', assigned_customer_id = NULL
+          WHERE id = ${linkedEsimId}
+        `;
+      }
+    }
 
     // Log the action
     await sql`

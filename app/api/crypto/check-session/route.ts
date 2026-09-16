@@ -75,30 +75,61 @@ export async function GET(request: NextRequest) {
     if (onChainBalance >= minAcceptable) {
       // Payment Verified On-Chain! Auto-activate plan & assign eSIM
 
-      // 1. Check for available eSIM profile in stock
-      const availableEsims = await sql`
-        SELECT id, provider_name, activation_code
-        FROM esims
-        WHERE status = 'available'
-        ORDER BY created_at ASC
-        LIMIT 1
-      `;
-
+      // 1. Resolve eSIM: Reuse existing customer eSIM (top-up) or allocate from stock
       let assignedEsimId: string | null = null;
       let hasEsim = false;
 
-      if (availableEsims.length > 0) {
-        assignedEsimId = availableEsims[0].id;
-        hasEsim = true;
+      // Check if this customer already has an assigned eSIM profile
+      const existingCustomerEsims = await sql`
+        SELECT id, provider_name, activation_code
+        FROM esims
+        WHERE assigned_customer_id = ${session.customer_id}
+        LIMIT 1
+      `;
 
-        // Assign eSIM to this customer
-        await sql`
-          UPDATE esims
-          SET 
-            status = 'assigned',
-            assigned_customer_id = ${session.customer_id}
-          WHERE id = ${assignedEsimId}
+      if (existingCustomerEsims.length > 0) {
+        // Customer already has an eSIM -> attach this new plan as an instant top-up
+        assignedEsimId = existingCustomerEsims[0].id;
+        hasEsim = true;
+      } else {
+        // First-time buyer -> assign available eSIM profile from stock
+        const availableEsims = await sql`
+          SELECT id, provider_name, activation_code
+          FROM esims
+          WHERE status = 'available'
+          ORDER BY created_at ASC
+          LIMIT 1
         `;
+
+        if (availableEsims.length > 0) {
+          assignedEsimId = availableEsims[0].id;
+          hasEsim = true;
+
+          // Assign eSIM to this customer
+          await sql`
+            UPDATE esims
+            SET 
+              status = 'assigned',
+              assigned_customer_id = ${session.customer_id}
+            WHERE id = ${assignedEsimId}
+          `;
+        } else {
+          // Inventory exhausted -> alert admin for urgent manual provisioning
+          try {
+            await sql`
+              INSERT INTO activity_log (admin_id, action, target_type, target_id, details)
+              VALUES (
+                NULL, 
+                'inventory_depleted', 
+                'crypto_session', 
+                ${sessionId}, 
+                ${'URGENT: Crypto payment confirmed for session ' + sessionId + ' but no available eSIM profiles remain in stock. Please assign an eSIM manually.'}
+              )
+            `;
+          } catch (logErr) {
+            console.error("Failed to log inventory alert:", logErr);
+          }
+        }
       }
 
       // 2. Fetch catalog details for validity calculation

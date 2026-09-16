@@ -82,6 +82,14 @@ export default async function CustomerDetailPage({
     ORDER BY data_amount_gb ASC
   `;
 
+  // Fetch available eSIMs for "Add Plan" allocation
+  const availableEsims = await sql`
+    SELECT id, provider_name, activation_code
+    FROM esims
+    WHERE status = 'available'
+    ORDER BY created_at DESC
+  `;
+
   // Fetch recent login logs for anti-fraud analysis
   const loginLogs = await sql`
     SELECT id, ip_address, country, city, region, locality, isp, latitude, longitude, accuracy, source, device_summary, is_first_login, created_at
@@ -97,6 +105,7 @@ export default async function CustomerDetailPage({
         customer={customer as any}
         plans={plans as any}
         esims={decryptedEsims as any}
+        availableEsims={availableEsims as any}
         planCatalog={planCatalog as any}
         loginLogs={loginLogs as any}
       />

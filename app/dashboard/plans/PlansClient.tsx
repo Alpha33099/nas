@@ -2,6 +2,7 @@
 
 import { useState, useMemo, useRef, useEffect } from "react";
 import CheckoutModal from "@/components/CheckoutModal";
+import PaymentChoiceModal from "@/components/PaymentChoiceModal";
 
 interface Plan {
   id: string;
@@ -19,16 +20,18 @@ interface Plan {
 
 interface Props {
   plans: Plan[];
+  customerUsername?: string;
 }
 
 type FilterCategory = "all" | "short" | "extended" | "heavy";
 
-export default function PlansClient({ plans }: Props) {
+export default function PlansClient({ plans, customerUsername = "" }: Props) {
   // Filter state
   const [activeFilter, setActiveFilter] = useState<FilterCategory>("all");
 
   // Modal state
   const [selectedPlan, setSelectedPlan] = useState<Plan | null>(null);
+  const [choicePlan, setChoicePlan] = useState<Plan | null>(null);
   const [checkoutPlan, setCheckoutPlan] = useState<Plan | null>(null);
 
   // Auto-trigger checkout if planId is in query params
@@ -393,7 +396,7 @@ export default function PlansClient({ plans }: Props) {
 
                 <button
                   type="button"
-                  onClick={() => setCheckoutPlan(plan)}
+                  onClick={() => setChoicePlan(plan)}
                   className={`flex-1 min-h-[44px] px-4 py-2 rounded-xl text-white text-xs font-bold transition-all shadow-xs text-center flex items-center justify-center gap-1.5 ${
                     isPopular
                       ? "bg-teal-600 hover:bg-teal-700 active:bg-teal-800"
@@ -481,7 +484,7 @@ export default function PlansClient({ plans }: Props) {
                 onClick={() => {
                   const p = selectedPlan;
                   setSelectedPlan(null);
-                  setCheckoutPlan(p);
+                  setChoicePlan(p);
                 }}
                 className="flex-1 min-h-[44px] py-2.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold shadow-xs transition-colors flex items-center justify-center gap-1.5"
               >
@@ -491,6 +494,30 @@ export default function PlansClient({ plans }: Props) {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Payment Method Selector Modal */}
+      {choicePlan && (
+        <PaymentChoiceModal
+          plan={{
+            id: choicePlan.id,
+            name: choicePlan.name,
+            price: choicePlan.price,
+            sale_price: choicePlan.sale_price,
+            is_on_sale: choicePlan.is_on_sale,
+            data: `${choicePlan.data_amount_gb} GB`,
+            validity: `${choicePlan.validity_days} Days`,
+            instagram_message: choicePlan.instagram_message,
+          }}
+          isOpen={Boolean(choicePlan)}
+          onClose={() => setChoicePlan(null)}
+          customerUsername={customerUsername}
+          onSelectCrypto={(p) => {
+            const found = plans.find((item) => item.id === p.id);
+            if (found) setCheckoutPlan(found);
+          }}
+          redirectPath="/dashboard/plans"
+        />
       )}
 
       {/* Crypto Checkout Modal */}
@@ -507,6 +534,7 @@ export default function PlansClient({ plans }: Props) {
           }}
           isOpen={Boolean(checkoutPlan)}
           onClose={() => setCheckoutPlan(null)}
+          customerUsername={customerUsername}
         />
       )}
 

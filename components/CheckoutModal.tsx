@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import QRCodeSVG from "./QRCodeSVG";
-import { X, Copy, Check, Zap, CheckCircle2, ShieldCheck, RefreshCw } from "lucide-react";
+import { X, Copy, Check, Zap, CheckCircle2, ShieldCheck, RefreshCw, Lock } from "lucide-react";
 import Link from "next/link";
 
 export interface CheckoutPlan {
@@ -41,6 +41,7 @@ export default function CheckoutModal({
   const [session, setSession] = useState<CryptoSession | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [isAuthError, setIsAuthError] = useState(false);
   const [copiedAmount, setCopiedAmount] = useState(false);
   const [copiedAddress, setCopiedAddress] = useState(false);
   const [isConfirmed, setIsConfirmed] = useState(false);
@@ -56,21 +57,29 @@ export default function CheckoutModal({
       setSession(null);
       setIsConfirmed(false);
       setError("");
+      setIsAuthError(false);
       return;
     }
 
     let isMounted = true;
     setLoading(true);
     setError("");
+    setIsAuthError(false);
 
     fetch("/api/crypto/create-session", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ planId: plan.id }),
     })
-      .then((res) => res.json())
-      .then((data) => {
+      .then(async (res) => {
+        const data = await res.json();
         if (!isMounted) return;
+        if (res.status === 401 || (data.error && data.error.toLowerCase().includes("auth"))) {
+          setIsAuthError(true);
+          setError(data.error || "Please sign in to your account to activate your eSIM.");
+          setLoading(false);
+          return;
+        }
         if (data.success) {
           setSession(data);
           setLoading(false);
@@ -160,13 +169,47 @@ export default function CheckoutModal({
           </div>
         )}
 
-        {/* ERROR STATE */}
-        {!loading && error && (
-          <div className="py-8 text-center">
+        {/* AUTH REQUIRED STATE */}
+        {!loading && error && isAuthError && (
+          <div className="py-8 text-center animate-in zoom-in-95 duration-150">
+            <div className="w-12 h-12 rounded-2xl bg-slate-900 text-teal-400 flex items-center justify-center mx-auto mb-3 shadow-md shadow-slate-900/10">
+              <Lock size={22} className="text-teal-400" />
+            </div>
+            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+              Account Required
+            </span>
+            <h3 className="text-lg sm:text-xl font-bold text-slate-900 mt-1 tracking-tight">
+              Sign In to Activate Your eSIM
+            </h3>
+            <p className="text-xs text-slate-500 mt-1.5 px-4 leading-relaxed max-w-sm mx-auto">
+              Please sign in so your eSIM QR code can be automatically provisioned and securely linked to your account.
+            </p>
+
+            <div className="mt-6 flex flex-col sm:flex-row gap-2.5 justify-center px-4">
+              <Link
+                href={`/login?redirect=/plans&planId=${plan.id}`}
+                className="flex-1 inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-700 active:bg-teal-800 text-white text-xs font-bold transition shadow-xs shadow-teal-600/20"
+              >
+                <Zap size={14} className="fill-white" />
+                <span>Sign In to Continue</span>
+              </Link>
+              <button
+                onClick={onClose}
+                className="px-4 py-2.5 rounded-xl border border-slate-200 text-slate-600 text-xs font-semibold hover:bg-slate-50 transition"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* GENERIC ERROR STATE */}
+        {!loading && error && !isAuthError && (
+          <div className="py-8 text-center animate-in zoom-in-95 duration-150">
             <div className="w-12 h-12 rounded-full bg-rose-50 text-rose-600 flex items-center justify-center mx-auto mb-3">
               <X size={24} />
             </div>
-            <h3 className="text-base font-bold text-slate-900">Checkout Error</h3>
+            <h3 className="text-base font-bold text-slate-900">Checkout Notice</h3>
             <p className="text-xs text-slate-600 mt-1 mb-5">{error}</p>
             <button
               onClick={onClose}

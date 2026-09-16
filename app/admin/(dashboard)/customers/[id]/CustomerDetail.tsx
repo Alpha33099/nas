@@ -86,6 +86,7 @@ interface Props {
   };
   plans: Plan[];
   esims: Esim[];
+  availableEsims?: Array<{ id: string; provider_name: string; activation_code?: string | null }>;
   planCatalog: CatalogPlan[];
   loginLogs?: LoginLog[];
 }
@@ -97,7 +98,14 @@ function generatePassword(): string {
   return Array.from(array, (byte) => chars[byte % chars.length]).join("");
 }
 
-export default function CustomerDetail({ customer, plans, esims, planCatalog, loginLogs = [] }: Props) {
+export default function CustomerDetail({
+  customer,
+  plans,
+  esims,
+  availableEsims = [],
+  planCatalog,
+  loginLogs = [],
+}: Props) {
   const router = useRouter();
 
   // Password reset state
@@ -120,6 +128,7 @@ export default function CustomerDetail({ customer, plans, esims, planCatalog, lo
   const [showAddPlan, setShowAddPlan] = useState(false);
   const [addPlanId, setAddPlanId] = useState("");
   const [addStartDate, setAddStartDate] = useState(new Date().toISOString().split("T")[0]);
+  const [addEsimId, setAddEsimId] = useState(esims[0]?.id || "");
   const [addLoading, setAddLoading] = useState(false);
 
   // Show/hide eSIM credentials
@@ -280,7 +289,11 @@ export default function CustomerDetail({ customer, plans, esims, planCatalog, lo
       const res = await fetch(`/api/admin/customers/${customer.id}/add-plan`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ plan_catalog_id: addPlanId, start_date: addStartDate }),
+        body: JSON.stringify({
+          plan_catalog_id: addPlanId,
+          start_date: addStartDate,
+          esim_id: addEsimId || undefined,
+        }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -718,6 +731,40 @@ export default function CustomerDetail({ customer, plans, esims, planCatalog, lo
                   className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs sm:text-sm text-slate-900
                              focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 bg-white"
                 />
+              </div>
+              <div className="sm:col-span-2">
+                <label className="block text-xs font-bold text-slate-700 mb-1.5">Link to eSIM Profile</label>
+                <select
+                  value={addEsimId}
+                  onChange={(e) => setAddEsimId(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs sm:text-sm text-slate-900
+                             focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 bg-white"
+                >
+                  {esims.length > 0 && (
+                    <optgroup label="Customer's Active eSIM">
+                      {esims.map((e) => (
+                        <option key={e.id} value={e.id}>
+                          Attached Profile: {e.provider_name} (ID: {e.id.slice(0, 8)}...) — Recommended
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                  {availableEsims.length > 0 && (
+                    <optgroup label="Available Stock in Inventory">
+                      {availableEsims.map((e) => (
+                        <option key={e.id} value={e.id}>
+                          {e.provider_name} (Stock ID: {e.id.slice(0, 8)}...)
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                  <option value="">No eSIM Profile (Provision / Link Later)</option>
+                </select>
+                <p className="text-2xs text-slate-400 mt-1">
+                  {addEsimId
+                    ? "This plan will be linked to the selected eSIM. The customer will see it immediately on their dashboard."
+                    : "No eSIM will be linked initially. You can assign one later from this profile."}
+                </p>
               </div>
             </div>
             {addExpiryPreview && (

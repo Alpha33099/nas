@@ -1,7 +1,9 @@
 import { sql } from "@/lib/db";
+import { verifyCustomerToken } from "@/lib/auth";
 import PlansClient from "./PlansClient";
 
 export default async function BrowsePlansPage() {
+  const customer = await verifyCustomerToken();
   const plans = await sql`
     SELECT 
       id, 
@@ -20,5 +22,5 @@ export default async function BrowsePlansPage() {
     ORDER BY is_highlighted DESC, data_amount_gb ASC
   `;
 
-  return <PlansClient plans={plans as any} />;
+  return <PlansClient plans={plans as any} customerUsername={customer?.username || ""} />;
 }
