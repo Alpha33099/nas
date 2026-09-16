@@ -17,6 +17,17 @@ export default function CustomerLoginPage() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [gpsCoords, setGpsCoords] = useState<GpsCoords | null>(null);
+  const [orderNotice, setOrderNotice] = useState(false);
+
+  // Check if user arrived from clicking BUY on a plan
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("planId") || params.get("redirect")) {
+        setOrderNotice(true);
+      }
+    }
+  }, []);
 
   // Quietly capture GPS coordinates on mount if browser allows
   useEffect(() => {
@@ -62,7 +73,15 @@ export default function CustomerLoginPage() {
         return;
       }
 
-      router.push("/dashboard");
+      const urlParams = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
+      const redirectPath = urlParams?.get("redirect");
+      const planId = urlParams?.get("planId");
+
+      if (redirectPath) {
+        router.push(planId ? `${redirectPath}?planId=${planId}` : redirectPath);
+      } else {
+        router.push("/dashboard");
+      }
     } catch {
       setError("Network connection error. Please try again.");
       setLoading(false);
@@ -151,6 +170,15 @@ export default function CustomerLoginPage() {
                 Access your active eSIM data, check real-time usage, or top up.
               </p>
             </div>
+
+            {orderNotice && (
+              <div className="mb-5 p-3 rounded-2xl bg-teal-50/80 border border-teal-200/80 text-xs text-teal-900 flex items-center gap-2.5 shadow-2xs">
+                <span className="text-base shrink-0">⚡</span>
+                <span className="font-semibold">
+                  Please sign in to proceed with your eSIM checkout.
+                </span>
+              </div>
+            )}
 
             <form onSubmit={handleFormSubmit} className="space-y-4">
             {/* Username Input */}

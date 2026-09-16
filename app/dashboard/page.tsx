@@ -34,7 +34,7 @@ export default async function CustomerDashboardPage() {
   `;
   const primaryEsim = customerEsims[0] || null;
 
-  // 2. Fetch Active plans only with calibration baseline
+  // 2. Fetch Active plans only with calibration baseline and linked eSIM info
   const activePlans = await sql`
     SELECT 
       cp.id,
@@ -48,9 +48,14 @@ export default async function CustomerDashboardPage() {
       cp.status,
       cp.last_usage_update_at,
       cp.created_at,
-      pc.name as plan_name
+      pc.name as plan_name,
+      e.id as esim_id,
+      e.provider_name,
+      e.activation_code,
+      e.notes as esim_notes
     FROM customer_plans cp
     JOIN plans_catalog pc ON cp.plan_catalog_id = pc.id
+    LEFT JOIN esims e ON cp.esim_id = e.id
     WHERE cp.customer_id = ${customer.id} AND cp.status = 'active'
     ORDER BY cp.expiry_date ASC
   `;
@@ -93,9 +98,10 @@ export default async function CustomerDashboardPage() {
       dailyRate: usage.dailyRate,
       isLow: usagePercent >= 80,
       isExpiringSoon: daysRemaining <= 3,
-      activation_code: primaryEsim?.activation_code || null,
-      provider_name: primaryEsim?.provider_name || null,
-      notes: primaryEsim?.notes || null,
+      activation_code: plan.activation_code || primaryEsim?.activation_code || null,
+      provider_name: plan.provider_name || primaryEsim?.provider_name || null,
+      notes: plan.esim_notes || primaryEsim?.notes || null,
+      hasEsim: Boolean(plan.activation_code || primaryEsim?.activation_code),
     };
   });
 

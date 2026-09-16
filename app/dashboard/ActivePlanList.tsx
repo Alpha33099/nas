@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import QRCodeSVG from "@/components/QRCodeSVG";
 
 export interface PlanItem {
   id: string;
@@ -210,36 +211,76 @@ export default function ActivePlanList({ plans, username }: Props) {
 
 
 
-            {/* eSIM Activation Credentials */}
+            {/* eSIM Activation Credentials & QR Code */}
             <div className="space-y-4 mb-6">
               {selectedPlan.activation_code ? (
-                <div className="bg-slate-50 rounded-2xl p-4 border border-slate-200">
-                  <div className="flex items-center justify-between mb-1.5">
-                    <span className="text-xs font-bold text-slate-700">eSIM Activation Code (LPA)</span>
-                    <button
-                      type="button"
-                      onClick={() => handleCopy(selectedPlan.activation_code || "")}
-                      className="text-2xs font-bold text-teal-700 hover:text-teal-800 bg-white border border-slate-200 px-2.5 py-1 rounded-lg shadow-2xs"
-                    >
-                      {copied ? "✓ Copied!" : "Copy Code"}
-                    </button>
+                <div className="bg-slate-50 rounded-2xl p-4 border border-slate-200 space-y-4">
+                  <div className="flex flex-col sm:flex-row items-center gap-4 bg-white p-4 rounded-xl border border-slate-200">
+                    <div className="shrink-0 flex flex-col items-center">
+                      <QRCodeSVG value={selectedPlan.activation_code} size={140} />
+                      <span className="text-3xs text-slate-400 mt-1 font-semibold">Scan to Install eSIM</span>
+                    </div>
+                    <div className="space-y-2 text-xs text-left w-full">
+                      <span className="inline-flex items-center gap-1 text-2xs font-bold text-teal-800 bg-teal-50 px-2 py-0.5 rounded-md border border-teal-200">
+                        <span>📱</span>
+                        <span>eSIM Profile Ready</span>
+                      </span>
+                      <p className="text-xs text-slate-600">
+                        Scan the QR code with your phone camera, or click the direct installer button below on iPhone:
+                      </p>
+                      <a
+                        href={`https://esimsetup.apple.com/esim_qrcode_provisioning?carddata=${encodeURIComponent(selectedPlan.activation_code)}`}
+                        className="inline-flex items-center justify-center gap-1.5 w-full py-2 px-3 rounded-lg bg-slate-900 hover:bg-slate-800 text-white font-semibold text-xs shadow-xs transition"
+                      >
+                        <span>Install on iPhone / iPad (Direct)</span>
+                        <span>↗</span>
+                      </a>
+                    </div>
                   </div>
-                  <p className="font-mono text-xs text-slate-800 break-all select-all font-semibold bg-white p-2.5 rounded-xl border border-slate-200">
-                    {selectedPlan.activation_code}
-                  </p>
+
+                  <div>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-xs font-bold text-slate-700">Activation Code (LPA)</span>
+                      <button
+                        type="button"
+                        onClick={() => handleCopy(selectedPlan.activation_code || "")}
+                        className="text-2xs font-bold text-teal-700 hover:text-teal-800 bg-white border border-slate-200 px-2.5 py-1 rounded-lg shadow-2xs"
+                      >
+                        {copied ? "✓ Copied!" : "Copy Code"}
+                      </button>
+                    </div>
+                    <p className="font-mono text-2xs text-slate-800 break-all select-all font-semibold bg-white p-2.5 rounded-xl border border-slate-200">
+                      {selectedPlan.activation_code}
+                    </p>
+                  </div>
+
+                  {/* Cellular activation notice */}
+                  <div className="p-3 bg-amber-50/80 border border-amber-200/80 rounded-xl text-2xs text-amber-900">
+                    <p className="font-bold flex items-center gap-1.5">
+                      <span>⏳</span>
+                      <span>Cellular Service Pending Admin Activation</span>
+                    </p>
+                    <p className="text-amber-800 mt-0.5">
+                      You can install your eSIM profile immediately. Roaming data access is activated by our admin team within a few minutes.
+                    </p>
+                  </div>
                 </div>
               ) : (
-                <div className="bg-teal-50/70 border border-teal-200/80 rounded-2xl p-4 text-xs text-teal-900 space-y-1">
-                  <p className="font-bold flex items-center gap-1.5">
-                    <span>✓</span>
-                    <span>eSIM Active & Provisioned</span>
+                <div className="bg-amber-50/80 border border-amber-200/90 rounded-2xl p-4 text-xs text-amber-900 space-y-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-base">⏳</span>
+                    <span className="font-bold text-amber-950">eSIM Profile Will Be Added Shortly</span>
+                  </div>
+                  <p className="text-amber-800 text-xs">
+                    Your order is confirmed and your data bundle is active. Our admin team is currently assigning your eSIM profile.
+                    Your installation QR code and setup link will automatically appear right here once attached.
                   </p>
-                  <p className="text-slate-600 text-2xs">
-                    Your eSIM is already active on the global cellular network. If you need your original activation QR code again, message us on Instagram.
+                  <p className="text-2xs text-amber-700 font-medium">
+                    Questions or urgent trip? Message our Instagram concierge @simvaya21 anytime.
                   </p>
                 </div>
               )}
-
+            </div>
               {/* Data Specifications Grid */}
               <div className="grid grid-cols-2 gap-3 text-xs">
                 <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/80">
@@ -280,7 +321,6 @@ export default function ActivePlanList({ plans, username }: Props) {
                   </div>
                 </div>
               </div>
-            </div>
 
             {/* Modal Footer */}
             <div className="flex gap-2.5">
