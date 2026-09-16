@@ -61,76 +61,77 @@ ${JSON.stringify(countries.slice(0, 35), null, 2)}
 ${JSON.stringify(faqs, null, 2)}
 `;
 
-    // 1. Prioritize OpenRouter API
-    const openRouterKey = process.env.OPENROUTER_API_KEY;
-    if (openRouterKey) {
+    // Direct Google Gemini API integration using Google AI Studio key
+    const geminiKey = process.env.GEMINI_API_KEY?.trim();
+    if (geminiKey) {
+      const history = Array.isArray(conversation) ? conversation.slice(-8) : [];
+      const contents = [
+        ...history.map((h: { role: string; content?: string; text?: string }) => ({
+          role: h.role === "assistant" ? "model" : "user",
+          parts: [{ text: h.content || h.text || "" }],
+        })),
+        {
+          role: "user",
+          parts: [{ text: message.trim() }],
+        },
+      ];
+
+      // Primary: gemini-3.6-flash (current Google AI Studio production model)
       try {
-        const history = Array.isArray(conversation) ? conversation.slice(-8) : [];
-        const messages = [
-          { role: "system", content: systemPrompt },
-          ...history,
-          { role: "user", content: message },
-        ];
-
-        const modelName = process.env.OPENROUTER_MODEL || "openrouter/free";
-
-        const orRes = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${geminiKey}`;
+        const geminiRes = await fetch(geminiUrl, {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${openRouterKey}`,
-          },
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            model: modelName,
-            messages,
+            system_instruction: {
+              parts: [{ text: systemPrompt }],
+            },
+            contents,
+            generationConfig: {
+              temperature: 0.6,
+              maxOutputTokens: 2048,
+            },
           }),
         });
-
-        if (orRes.ok) {
-          const orData = await orRes.json();
-          let reply = orData?.choices?.[0]?.message?.content;
-          if (reply && typeof reply === "string" && reply.trim().length > 0) {
-            return NextResponse.json({ reply: reply.trim() });
-          }
-        } else {
-          console.warn("OpenRouter returned error status:", orRes.status, await orRes.text());
-        }
-      } catch (err) {
-        console.warn("OpenRouter fetch error:", err);
-      }
-    }
-
-    // 2. Try Google Gemini API if a valid AI Studio key is provided
-    const geminiKey = process.env.GEMINI_API_KEY;
-    if (geminiKey && geminiKey.startsWith("AIzaSy")) {
-      try {
-        const geminiRes = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiKey}`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              contents: [
-                {
-                  role: "user",
-                  parts: [{ text: `${systemPrompt}\n\nCustomer question: ${message}` }],
-                },
-              ],
-            }),
-          }
-        );
 
         if (geminiRes.ok) {
           const geminiData = await geminiRes.json();
           const reply = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text;
-          if (reply) return NextResponse.json({ reply });
+          if (reply && reply.trim().length > 0) {
+            return NextResponse.json({ reply: reply.trim() });
+          }
+        } else {
+          // Fallback to gemini-flash-latest
+          const fallbackUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${geminiKey}`;
+          const fallbackRes = await fetch(fallbackUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              system_instruction: {
+                parts: [{ text: systemPrompt }],
+              },
+              contents,
+              generationConfig: {
+                temperature: 0.6,
+                maxOutputTokens: 2048,
+              },
+            }),
+          });
+
+          if (fallbackRes.ok) {
+            const fallbackData = await fallbackRes.json();
+            const fallbackReply = fallbackData?.candidates?.[0]?.content?.parts?.[0]?.text;
+            if (fallbackReply && fallbackReply.trim().length > 0) {
+              return NextResponse.json({ reply: fallbackReply.trim() });
+            }
+          }
         }
       } catch (err) {
-        console.warn("Gemini API call error:", err);
+        console.warn("Google Gemini API call error:", err);
       }
     }
 
-    // 3. Fallback reply
+    // Fallback reply if API is down or key not set
     return NextResponse.json({
       reply: "Thank you for reaching out! You can explore all our high-speed eSIM plans in our Plans catalog, or chat directly with our team on Instagram (@simvaya21) to get your eSIM QR code instantly!",
     });
