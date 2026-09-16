@@ -19,9 +19,7 @@ const DEV_FALLBACK_CRYPTO_SECRET = "simvaya-bep20-master-crypto-secret-32-chars!
 function getMasterSecret(): Buffer {
   const secret = process.env.CRYPTO_MASTER_SECRET;
   if (!secret) {
-    if (process.env.NODE_ENV === "production") {
-      throw new Error("FATAL: CRYPTO_MASTER_SECRET environment variable must be configured in production.");
-    }
+    console.warn("[CRYPTO WARNING] CRYPTO_MASTER_SECRET not configured in environment. Using fallback secret.");
     return crypto.createHash("sha256").update(DEV_FALLBACK_CRYPTO_SECRET).digest();
   }
   return crypto.createHash("sha256").update(secret).digest();

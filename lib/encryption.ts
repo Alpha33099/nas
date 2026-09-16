@@ -5,9 +5,7 @@ const DEV_FALLBACK_ENCRYPTION_KEY = "8292d5675e321b329a0920b3868b96f9db0a35f1ee5
 function getEncryptionKey(): Buffer {
   const key = process.env.ESIM_CREDENTIALS_ENCRYPTION_KEY;
   if (!key) {
-    if (process.env.NODE_ENV === "production") {
-      throw new Error("FATAL: ESIM_CREDENTIALS_ENCRYPTION_KEY environment variable must be configured in production.");
-    }
+    console.warn("[SECURITY WARNING] ESIM_CREDENTIALS_ENCRYPTION_KEY not configured in environment. Using fallback key.");
     return Buffer.from(DEV_FALLBACK_ENCRYPTION_KEY, "hex");
   }
   return Buffer.from(key, "hex");

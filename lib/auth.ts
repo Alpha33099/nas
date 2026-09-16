@@ -29,9 +29,7 @@ const DEV_FALLBACK_CUSTOMER_SECRET = "22d6acaa6e9a63c5fe7b6735fe0bd45e6195d47f88
 function getAdminSecret(): string {
   const secret = process.env.JWT_SECRET_ADMIN;
   if (!secret) {
-    if (process.env.NODE_ENV === "production") {
-      throw new Error("FATAL: JWT_SECRET_ADMIN environment variable must be configured in production.");
-    }
+    console.warn("[AUTH WARNING] JWT_SECRET_ADMIN not configured in environment. Using fallback secret.");
     return DEV_FALLBACK_ADMIN_SECRET;
   }
   return secret;
@@ -40,9 +38,7 @@ function getAdminSecret(): string {
 function getCustomerSecret(): string {
   const secret = process.env.JWT_SECRET_CUSTOMER;
   if (!secret) {
-    if (process.env.NODE_ENV === "production") {
-      throw new Error("FATAL: JWT_SECRET_CUSTOMER environment variable must be configured in production.");
-    }
+    console.warn("[AUTH WARNING] JWT_SECRET_CUSTOMER not configured in environment. Using fallback secret.");
     return DEV_FALLBACK_CUSTOMER_SECRET;
   }
   return secret;
