@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Sparkles, X, MessageCircle, Zap } from "lucide-react";
 import { siteConfig } from "@/config/site";
@@ -27,6 +27,24 @@ export default function BuyButton({ plan }: BuyButtonProps) {
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
   const [checkingAuth, setCheckingAuth] = useState(false);
   const [customerUsername, setCustomerUsername] = useState("");
+
+  // Check if returning from login with this plan selected
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("planId") === plan.id) {
+        fetch("/api/auth/customer/me")
+          .then((res) => res.json())
+          .then((data) => {
+            if (data.loggedIn && data.customer) {
+              setCustomerUsername(data.customer.username);
+              setIsCheckoutOpen(true);
+            }
+          })
+          .catch(() => {});
+      }
+    }
+  }, [plan.id]);
 
   const { formatPrice } = useCurrency();
 
