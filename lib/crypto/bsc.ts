@@ -14,13 +14,13 @@ const BSC_RPC_ENDPOINTS = [
 ];
 
 // Master encryption key for deposit wallet private keys
-const DEV_FALLBACK_CRYPTO_SECRET = "simvaya-bep20-master-crypto-secret-32-chars!!";
-
 function getMasterSecret(): Buffer {
   const secret = process.env.CRYPTO_MASTER_SECRET;
   if (!secret) {
-    console.warn("[CRYPTO WARNING] CRYPTO_MASTER_SECRET not configured in environment. Using fallback secret.");
-    return crypto.createHash("sha256").update(DEV_FALLBACK_CRYPTO_SECRET).digest();
+    if (process.env.NODE_ENV === "production") {
+      throw new Error("CRYPTO_MASTER_SECRET environment variable is required.");
+    }
+    return crypto.createHash("sha256").update("simvaya-crypto-local-safe-key").digest();
   }
   return crypto.createHash("sha256").update(secret).digest();
 }
