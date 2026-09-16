@@ -46,8 +46,31 @@ export default function CheckoutModal({
   const [isConfirmed, setIsConfirmed] = useState(false);
   const [hasEsim, setHasEsim] = useState(false);
   const [isPolling, setIsPolling] = useState(false);
+  const [isSimulating, setIsSimulating] = useState(false);
 
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  async function handleSimulatePayment() {
+    if (!session) return;
+    setIsSimulating(true);
+    try {
+      const res = await fetch("/api/crypto/simulate-transfer", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId: session.sessionId }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setIsConfirmed(true);
+        setHasEsim(Boolean(data.hasEsim));
+        if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+      }
+    } catch (err) {
+      console.error("Simulation error:", err);
+    } finally {
+      setIsSimulating(false);
+    }
+  }
 
   // Initialize session on modal open
   useEffect(() => {
@@ -331,6 +354,23 @@ export default function CheckoutModal({
                   className={`text-teal-600 ${isPolling ? "animate-spin" : ""}`}
                 />
               </div>
+            </div>
+
+            {/* Test Simulation Button (Zero-cost live testing) */}
+            <div className="pt-1">
+              <button
+                type="button"
+                onClick={handleSimulatePayment}
+                disabled={isSimulating}
+                className="w-full py-2.5 px-3 rounded-xl border border-dashed border-teal-500/60 bg-teal-50/60 hover:bg-teal-100/60 text-teal-800 text-xs font-bold transition flex items-center justify-center gap-2 active:scale-98 shadow-2xs"
+              >
+                <Zap size={13} className="text-teal-600 fill-teal-600" />
+                <span>
+                  {isSimulating
+                    ? "Simulating On-Chain Confirmation..."
+                    : `🧪 Test Mode: Simulate ${session.totalUsdt.toFixed(2)} USDT Payment ($0 Spent)`}
+                </span>
+              </button>
             </div>
 
             {/* Disclaimer */}
