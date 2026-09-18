@@ -3,6 +3,7 @@
 import { useState, useMemo, useRef, useEffect } from "react";
 import CheckoutModal from "@/components/CheckoutModal";
 import PaymentChoiceModal from "@/components/PaymentChoiceModal";
+import ReactMarkdown from "react-markdown";
 
 interface Plan {
   id: string;
@@ -590,7 +591,13 @@ export default function PlansClient({ plans, customerUsername = "" }: Props) {
                         : "bg-white text-slate-800 rounded-bl-xs border border-slate-200/80"
                     }`}
                   >
-                    {msg.text}
+                    {msg.sender === "user" ? (
+                      msg.text
+                    ) : (
+                      <div className="prose-chat text-xs">
+                        <ReactMarkdown>{msg.text}</ReactMarkdown>
+                      </div>
+                    )}
                   </div>
                 </div>
               ))}

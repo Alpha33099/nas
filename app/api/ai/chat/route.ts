@@ -40,25 +40,28 @@ export async function POST(req: NextRequest) {
       // ignore
     }
 
-    const systemPrompt = `You are Simwaya AI, the official 24/7 travel connectivity assistant for Simwaya (eSIM company for Pakistan and global destinations).
+    const systemPrompt = `You are Simvaya AI, the official 24/7 travel connectivity assistant for Simvaya (premium eSIM provider for global travelers and Pakistan).
 
-Help customers choose the right eSIM data plan, verify device compatibility, understand coverage, and guide them on instant activation.
+ROLE & TONE:
+Act like a friendly, intelligent travel concierge. Keep replies structured, concise, and beautifully formatted — just like ChatGPT.
 
-Always use the live plan data, countries, and FAQ info provided below.
-If a customer asks about a non-PTA device in Pakistan:
-- Explain that factory-unlocked eSIM devices generally work for digital data roaming.
-- Recommend confirming their specific model by chatting with us on Instagram (@${siteConfig.instagramUsername}).
+FORMATTING RULES (VERY IMPORTANT):
+1. **Headings**: Use clean markdown headings (e.g. \`### 🌟 Top Recommendations\`, \`### 📱 Compatibility\`, \`### 💡 Quick Summary\`).
+2. **Bullets & Bold**: Use bold text for plan names, data amounts, and prices (e.g. **5GB ($14.99)** for 21 days). Always use bullet points with bold key labels.
+3. **No Walls of Text**: Keep paragraphs short (1-2 sentences). Structure with bullet points and bold highlights for quick scanning on mobile.
+4. **Hotspot & Features**: Mention that Personal Hotspot, Google Maps, and WhatsApp are fully supported on all plans.
+5. **Non-PTA Devices in Pakistan**: If asked about Pakistan or non-PTA phones, explain that factory-unlocked eSIM phones can roam and use data seamlessly without PTA tax.
+6. **Call to Action**: Conclude with a clear, friendly action step:
+   - "👉 **How to Order:** Click **Buy Now** on this page or chat with us on Instagram **@${siteConfig.instagramUsername}** for instant activation!"
 
-FORMATTING: Keep responses concise, helpful, and beautifully formatted with bullet points and bold highlights.
-
---- SIMWAYA LIVE PLANS IN DATABASE ---
+--- SIMVAYA AVAILABLE PLANS ---
 ${JSON.stringify(plansData, null, 2)}
 
 --- POPULAR DESTINATIONS ---
-${JSON.stringify(countries.slice(0, 35), null, 2)}
+${JSON.stringify(countries.slice(0, 30), null, 2)}
 
---- COMMON QUESTIONS ---
-${JSON.stringify(faqs, null, 2)}
+--- FREQUENTLY ASKED QUESTIONS ---
+${JSON.stringify(faqs.slice(0, 15), null, 2)}
 `;
 
     // Direct Google Gemini API integration using Google AI Studio key
@@ -69,7 +72,7 @@ ${JSON.stringify(faqs, null, 2)}
         : Array.isArray(rawHistory)
         ? rawHistory
         : [];
-      const trimmedHistory = pastMessages.slice(-10);
+      const trimmedHistory = pastMessages.slice(-8);
 
       const contents = [
         ...trimmedHistory.map((h: any) => ({
@@ -82,11 +85,11 @@ ${JSON.stringify(faqs, null, 2)}
         },
       ];
 
-      // Try top available Google AI Studio Flash models in order of resilience
+      // Ultra-fast Flash models prioritized for sub-2-second response latency
       const candidateModels = [
-        "gemini-3.8-flash",
         "gemini-3.5-flash-lite",
         "gemini-flash-lite-latest",
+        "gemini-3.8-flash",
         "gemini-3.6-flash",
       ];
 
@@ -102,8 +105,8 @@ ${JSON.stringify(faqs, null, 2)}
               },
               contents,
               generationConfig: {
-                temperature: 0.6,
-                maxOutputTokens: 2048,
+                temperature: 0.5,
+                maxOutputTokens: 850,
               },
             }),
           });
