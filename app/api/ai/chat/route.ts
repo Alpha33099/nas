@@ -25,7 +25,7 @@ export async function POST(req: NextRequest) {
     if (!validation.success) {
       return validation.response;
     }
-    const { message, conversation } = validation.data;
+    const { message, conversation, history: rawHistory } = validation.data as any;
 
     // Fetch live plans from database for AI context
     let plansData: any[] = [];
@@ -64,10 +64,16 @@ ${JSON.stringify(faqs, null, 2)}
     // Direct Google Gemini API integration using Google AI Studio key
     const geminiKey = process.env.GEMINI_API_KEY?.trim();
     if (geminiKey) {
-      const history = Array.isArray(conversation) ? conversation.slice(-8) : [];
+      const pastMessages = Array.isArray(conversation)
+        ? conversation
+        : Array.isArray(rawHistory)
+        ? rawHistory
+        : [];
+      const trimmedHistory = pastMessages.slice(-10);
+
       const contents = [
-        ...history.map((h: { role: string; content?: string; text?: string }) => ({
-          role: h.role === "assistant" ? "model" : "user",
+        ...trimmedHistory.map((h: any) => ({
+          role: (h.role === "assistant" || h.role === "model" || h.sender === "ai") ? "model" : "user",
           parts: [{ text: h.content || h.text || "" }],
         })),
         {
@@ -76,34 +82,18 @@ ${JSON.stringify(faqs, null, 2)}
         },
       ];
 
-      // Primary: gemini-3.6-flash (current Google AI Studio production model)
-      try {
-        const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${geminiKey}`;
-        const geminiRes = await fetch(geminiUrl, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            system_instruction: {
-              parts: [{ text: systemPrompt }],
-            },
-            contents,
-            generationConfig: {
-              temperature: 0.6,
-              maxOutputTokens: 2048,
-            },
-          }),
-        });
+      // Try top available Google AI Studio Flash models in order of resilience
+      const candidateModels = [
+        "gemini-3.8-flash",
+        "gemini-3.5-flash-lite",
+        "gemini-flash-lite-latest",
+        "gemini-3.6-flash",
+      ];
 
-        if (geminiRes.ok) {
-          const geminiData = await geminiRes.json();
-          const reply = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text;
-          if (reply && reply.trim().length > 0) {
-            return NextResponse.json({ reply: reply.trim() });
-          }
-        } else {
-          // Fallback to gemini-flash-latest
-          const fallbackUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${geminiKey}`;
-          const fallbackRes = await fetch(fallbackUrl, {
+      for (const modelName of candidateModels) {
+        try {
+          const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${geminiKey}`;
+          const geminiRes = await fetch(geminiUrl, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -118,16 +108,16 @@ ${JSON.stringify(faqs, null, 2)}
             }),
           });
 
-          if (fallbackRes.ok) {
-            const fallbackData = await fallbackRes.json();
-            const fallbackReply = fallbackData?.candidates?.[0]?.content?.parts?.[0]?.text;
-            if (fallbackReply && fallbackReply.trim().length > 0) {
-              return NextResponse.json({ reply: fallbackReply.trim() });
+          if (geminiRes.ok) {
+            const geminiData = await geminiRes.json();
+            const reply = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text;
+            if (reply && reply.trim().length > 0) {
+              return NextResponse.json({ reply: reply.trim() });
             }
           }
+        } catch (err) {
+          console.warn(`Google Gemini API (${modelName}) error:`, err);
         }
-      } catch (err) {
-        console.warn("Google Gemini API call error:", err);
       }
     }
 

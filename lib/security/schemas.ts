@@ -231,12 +231,25 @@ export const AiChatSchema = z
       .array(
         z
           .object({
-            role: z.enum(["user", "assistant"]),
-            content: z.string().max(2000),
+            role: z.string().max(20).optional(),
+            content: z.string().max(3000).optional(),
+            text: z.string().max(3000).optional(),
           })
-          .strict()
+          .passthrough()
       )
-      .max(20, "Conversation history cannot exceed 20 messages.")
+      .max(30, "Conversation history cannot exceed 30 messages.")
+      .optional(),
+    history: z
+      .array(
+        z
+          .object({
+            role: z.string().max(20).optional(),
+            content: z.string().max(3000).optional(),
+            text: z.string().max(3000).optional(),
+          })
+          .passthrough()
+      )
+      .max(30, "History cannot exceed 30 messages.")
       .optional(),
   })
-  .strict();
+  .passthrough();
