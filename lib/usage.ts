@@ -93,6 +93,22 @@ export function calculateCurrentUsage(
       ? Number(plan.used_gb)
       : 0;
 
+  if (plan.status === "inactive") {
+    return {
+      currentUsedGb: 0,
+      remainingGb: totalGb,
+      manualGb: 0,
+      dailyRate: 0,
+      additionalGb: 0,
+      percentUsed: 0,
+      daysSinceAnchor: 0,
+      hoursSinceAnchor: 0,
+      rateSource: "none",
+      incrementPer3MinMb: 0,
+      intervalsCount: 0,
+    };
+  }
+
   if (plan.status !== "active" || totalGb <= 0) {
     const safeUsed = Math.min(Math.max(0, manualGb), totalGb);
     return {

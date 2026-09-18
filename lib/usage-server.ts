@@ -52,9 +52,17 @@ export async function recordManualUsage(planId: string, manualGb: number, adminI
     `;
   }
 
+  // If manual usage exhausts the plan quota, auto-sync and promote next queued plan
+  let syncResult = null;
+  if (Number(manualGb) >= Number(plan.total_gb)) {
+    const { syncCustomerPlans } = await import("./plan-lifecycle");
+    syncResult = await syncCustomerPlans(plan.customer_id);
+  }
+
   return {
     success: true,
     manualGb,
     dailyRate,
+    syncResult,
   };
 }

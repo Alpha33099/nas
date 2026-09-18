@@ -79,10 +79,21 @@ export default function ActivePlanList({ plans, username }: Props) {
     }
   }
 
+  const activePlans = plans.filter((p) => p.status === "active");
+  const queuedPlans = plans.filter((p) => p.status === "inactive");
+
   return (
     <>
+      {/* ── 1. Active Running Plan ─────────────────────────── */}
       <div className="grid grid-cols-1 gap-5">
-        {plans.map((plan) => (
+        {activePlans.length === 0 && queuedPlans.length === 0 && (
+          <div className="bg-white rounded-3xl border border-slate-200 p-8 text-center">
+            <p className="text-sm font-semibold text-slate-700">No active plans found.</p>
+            <p className="text-xs text-slate-400 mt-1">Add a new plan to get started.</p>
+          </div>
+        )}
+
+        {activePlans.map((plan) => (
           <div
             key={plan.id}
             className={`relative overflow-hidden bg-white rounded-3xl border p-6 sm:p-7 shadow-xs transition-all ${
@@ -98,18 +109,22 @@ export default function ActivePlanList({ plans, username }: Props) {
               <div>
                 <div className="flex items-center gap-2">
                   <h3 className="text-lg font-bold text-slate-900">{plan.plan_name} Plan</h3>
+                  <span className="text-2xs font-bold px-2.5 py-0.5 rounded-full bg-emerald-100/80 text-emerald-800 border border-emerald-300/60 flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                    <span>Active Now</span>
+                  </span>
                   {plan.is_installed ? (
-                    <span className="text-2xs font-bold px-2.5 py-0.5 rounded-full bg-emerald-100/80 text-emerald-800 border border-emerald-300/60 flex items-center gap-1">
+                    <span className="text-2xs font-bold px-2.5 py-0.5 rounded-full bg-teal-50 text-teal-700 border border-teal-200/60 flex items-center gap-1">
                       <span>✓</span>
                       <span>Installed</span>
                     </span>
                   ) : (
-                    <span className="text-2xs font-bold px-2.5 py-0.5 rounded-full bg-teal-50 text-teal-700 border border-teal-200/60">
+                    <span className="text-2xs font-bold px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200/60">
                       Ready to Install
                     </span>
                   )}
                 </div>
-                <p className="text-xs text-slate-400 mt-0.5">High-Speed 4G / 5G Global Roaming</p>
+                <p className="text-xs text-slate-400 mt-0.5">High-Speed 4G / 5G Global Roaming • Primary Active Data</p>
               </div>
 
               {/* Action Buttons: View Details + Top Up */}
@@ -215,6 +230,67 @@ export default function ActivePlanList({ plans, username }: Props) {
           </div>
         ))}
       </div>
+
+      {/* ── 2. Upcoming Queued Bundles ────────────────────── */}
+      {queuedPlans.length > 0 && (
+        <div className="mt-8 pt-6 border-t border-slate-200">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
+            <div className="flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-amber-400"></span>
+              <h3 className="text-base font-bold text-slate-900 tracking-tight">Upcoming Queued Bundles</h3>
+              <span className="text-2xs font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">
+                {queuedPlans.length} In Queue
+              </span>
+            </div>
+            <p className="text-xs text-slate-500">
+              Activates automatically when your current plan finishes or expires.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4">
+            {queuedPlans.map((plan, index) => (
+              <div
+                key={plan.id}
+                className="relative overflow-hidden bg-slate-50/80 rounded-2xl border border-slate-200/80 p-5 transition-all hover:bg-slate-50"
+              >
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-bold text-slate-400">#{index + 1}</span>
+                      <h4 className="text-base font-bold text-slate-900">{plan.plan_name}</h4>
+                      <span className="text-2xs font-bold px-2.5 py-0.5 rounded-full bg-slate-200/70 text-slate-700 border border-slate-300/60">
+                        Queued (Inactive)
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-500">
+                      <span className="font-semibold text-slate-700">{Number(plan.total_gb).toFixed(2)} GB Data</span>
+                      {" • "}
+                      <span>{plan.daysRemaining || 30} Days Validity (Countdown begins upon auto-activation)</span>
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    <div className="text-right">
+                      <span className="text-2xs font-medium text-slate-400 uppercase tracking-wider block">Usage Status</span>
+                      <span className="text-xs font-bold text-slate-600 bg-white px-2.5 py-1 rounded-lg border border-slate-200 inline-block mt-0.5">
+                        0 GB Used (100% Intact)
+                      </span>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => handleOpenDetails(plan)}
+                      className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-semibold bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 transition-colors shadow-2xs"
+                    >
+                      <span>Details</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* ── View Details Modal ────────────────────────────────────── */}
       {selectedPlan && (

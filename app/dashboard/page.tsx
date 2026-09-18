@@ -8,14 +8,9 @@ export default async function CustomerDashboardPage() {
   const customer = await verifyCustomerToken();
   if (!customer) return null;
 
-  // 1. AUTO-EXPIRE: Automatically expire any plan that completed its validity OR used all GB
-  await sql`
-    UPDATE customer_plans
-    SET status = 'expired'
-    WHERE customer_id = ${customer.id}
-      AND status = 'active'
-      AND (expiry_date <= CURRENT_TIMESTAMP OR used_gb >= total_gb)
-  `;
+  // 1. Plan Lifecycle Engine: auto-expires exhausted plans and auto-activates queued plans
+  const { syncCustomerPlans } = await import("@/lib/plan-lifecycle");
+  await syncCustomerPlans(customer.id);
 
   const customerData = await sql`
     SELECT display_name
@@ -34,8 +29,8 @@ export default async function CustomerDashboardPage() {
   `;
   const primaryEsim = customerEsims[0] || null;
 
-  // 2. Fetch Active plans only with calibration baseline and linked eSIM info
-  const activePlans = await sql`
+  // 2. Fetch Active and Queued (Inactive) plans with decoupled fallback and linked eSIM info
+  const currentPlans = await sql`
     SELECT 
       cp.id,
       cp.total_gb,
@@ -50,16 +45,17 @@ export default async function CustomerDashboardPage() {
       cp.created_at,
       cp.is_installed,
       cp.installed_at,
-      pc.name as plan_name,
+      cp.validity_days,
+      COALESCE(cp.plan_name, pc.name, 'Travel Data Plan') as plan_name,
       e.id as esim_id,
       e.provider_name,
       e.activation_code,
       e.notes as esim_notes
     FROM customer_plans cp
-    JOIN plans_catalog pc ON cp.plan_catalog_id = pc.id
+    LEFT JOIN plans_catalog pc ON cp.plan_catalog_id = pc.id
     LEFT JOIN esims e ON cp.esim_id = e.id
-    WHERE cp.customer_id = ${customer.id} AND cp.status = 'active'
-    ORDER BY cp.expiry_date ASC
+    WHERE cp.customer_id = ${customer.id} AND cp.status IN ('active', 'inactive')
+    ORDER BY CASE WHEN cp.status = 'active' THEN 0 ELSE 1 END, cp.created_at ASC
   `;
 
   // 3. Fetch Expired plans (history)
@@ -70,26 +66,39 @@ export default async function CustomerDashboardPage() {
       cp.used_gb,
       cp.start_date,
       cp.expiry_date,
-      pc.name as plan_name
+      COALESCE(cp.plan_name, pc.name, 'Travel Data Plan') as plan_name
     FROM customer_plans cp
-    JOIN plans_catalog pc ON cp.plan_catalog_id = pc.id
+    LEFT JOIN plans_catalog pc ON cp.plan_catalog_id = pc.id
     WHERE cp.customer_id = ${customer.id} AND cp.status = 'expired'
     ORDER BY cp.expiry_date DESC
   `;
 
-  // Calculate usage for each active plan individually using live auto-rate engine (with expired plans context)
-  const plansWithUsage = (activePlans as any[]).map((plan) => {
-    const usage = calculateCurrentUsage(plan, expiredPlans as any);
-    const displayedUsage = usage.currentUsedGb;
-    const remainingGb = usage.remainingGb;
-    const usagePercent = usage.percentUsed;
+  // Calculate usage for current plans (active plans calculate live usage; queued inactive plans stay at 0)
+  const plansWithUsage = (currentPlans as any[]).map((plan) => {
+    const isInactive = plan.status === "inactive";
+    const totalGb = Number(plan.total_gb) || 0;
+    const validityDays = Number(plan.validity_days || 30);
 
-    const today = new Date();
-    const expiry = new Date(plan.expiry_date);
-    const daysRemaining = Math.max(
-      0,
-      Math.ceil((expiry.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
-    );
+    let displayedUsage = 0;
+    let remainingGb = totalGb;
+    let usagePercent = 0;
+    let daysRemaining = validityDays;
+    let dailyRate = 0;
+
+    if (!isInactive) {
+      const usage = calculateCurrentUsage(plan, expiredPlans as any);
+      displayedUsage = usage.currentUsedGb;
+      remainingGb = usage.remainingGb;
+      usagePercent = usage.percentUsed;
+      dailyRate = usage.dailyRate;
+
+      const today = new Date();
+      const expiry = plan.expiry_date ? new Date(plan.expiry_date) : today;
+      daysRemaining = Math.max(
+        0,
+        Math.ceil((expiry.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
+      );
+    }
 
     return {
       ...plan,
@@ -97,9 +106,9 @@ export default async function CustomerDashboardPage() {
       remainingGb,
       usagePercent,
       daysRemaining,
-      dailyRate: usage.dailyRate,
-      isLow: usagePercent >= 80,
-      isExpiringSoon: daysRemaining <= 3,
+      dailyRate,
+      isLow: !isInactive && usagePercent >= 80,
+      isExpiringSoon: !isInactive && daysRemaining <= 3,
       activation_code: plan.activation_code || primaryEsim?.activation_code || null,
       provider_name: plan.provider_name || primaryEsim?.provider_name || null,
       notes: plan.esim_notes || primaryEsim?.notes || null,

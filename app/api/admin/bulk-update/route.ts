@@ -27,11 +27,11 @@ export async function GET() {
         cp.status,
         cp.last_usage_update_at,
         cp.created_at,
-        pc.name as plan_name,
+        COALESCE(cp.plan_name, pc.name, 'Travel Data Plan') as plan_name,
         c.username as customer_username,
         c.display_name as customer_display_name
       FROM customer_plans cp
-      JOIN plans_catalog pc ON cp.plan_catalog_id = pc.id
+      LEFT JOIN plans_catalog pc ON cp.plan_catalog_id = pc.id
       JOIN customers c ON cp.customer_id = c.id
       WHERE cp.status = 'active'
       ORDER BY c.username ASC, cp.expiry_date ASC

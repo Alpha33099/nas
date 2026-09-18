@@ -25,7 +25,7 @@ export default async function CustomersPage() {
         json_agg(
           json_build_object(
             'id', cp.id,
-            'plan_name', pc.name,
+            'plan_name', COALESCE(cp.plan_name, pc.name, 'Travel Data Plan'),
             'total_gb', cp.total_gb,
             'used_gb', cp.used_gb,
             'manual_used_gb', cp.manual_used_gb,

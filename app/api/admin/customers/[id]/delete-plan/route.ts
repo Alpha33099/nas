@@ -58,11 +58,9 @@ export async function DELETE(
       }
     }
 
-    // Log the action
-    await sql`
-      INSERT INTO activity_log (admin_id, action, target_type, target_id, details)
-      VALUES (${admin.id}, 'deleted_customer_plan', 'customer_plan', ${planId}, ${'Removed plan ' + planId + ' from customer "' + customer[0].username + '"'})
-    `;
+    // Auto-promote next queued inactive plan if the active plan was deleted
+    const { syncCustomerPlans } = await import("@/lib/plan-lifecycle");
+    await syncCustomerPlans(id);
 
     return NextResponse.json({ success: true, message: "Plan removed successfully." });
   } catch (error) {

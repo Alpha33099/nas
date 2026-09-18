@@ -29,19 +29,29 @@ export async function POST(
 
     // Get plan catalog info
     const catalog = await sql`
-      SELECT id, data_amount_gb, validity_days FROM plans_catalog WHERE id = ${plan_catalog_id}
+      SELECT id, name, data_amount_gb, validity_days FROM plans_catalog WHERE id = ${plan_catalog_id}
     `;
     if (catalog.length === 0) {
       return NextResponse.json({ error: "Plan not found." }, { status: 404 });
     }
 
     const plan = catalog[0];
+    const validityDays = Number(plan.validity_days || 30);
 
     // Calculate expiry
     const startDateObj = new Date(start_date);
     const expiryDate = new Date(startDateObj);
-    expiryDate.setDate(expiryDate.getDate() + plan.validity_days);
+    expiryDate.setDate(expiryDate.getDate() + validityDays);
     const expiryDateStr = expiryDate.toISOString().split("T")[0];
+
+    // Check if customer already has an active plan
+    const activeExisting = await sql`
+      SELECT id FROM customer_plans
+      WHERE customer_id = ${id} AND status = 'active'
+      LIMIT 1
+    `;
+    const isQueued = activeExisting.length > 0;
+    const planStatus = isQueued ? "inactive" : "active";
 
     // Resolve target eSIM: validate provided eSIM or auto-link customer's existing eSIM
     let targetEsimId: string | null = esim_id || null;
@@ -77,21 +87,21 @@ export async function POST(
     const planId = crypto.randomUUID();
     await sql`
       INSERT INTO customer_plans (
-        id, customer_id, plan_catalog_id, esim_id, total_gb, used_gb,
-        manual_used_gb, manual_updated_at, daily_burn_rate,
-        start_date, expiry_date, status
+        id, customer_id, plan_catalog_id, plan_name, validity_days,
+        esim_id, total_gb, used_gb, manual_used_gb, manual_updated_at,
+        daily_burn_rate, start_date, expiry_date, status, created_at
       )
       VALUES (
-        ${planId}, ${id}, ${plan_catalog_id}, ${targetEsimId}, ${plan.data_amount_gb}, 0,
-        0, now(), 0,
-        ${start_date}, ${expiryDateStr}, 'active'
+        ${planId}, ${id}, ${plan_catalog_id}, ${plan.name}, ${validityDays},
+        ${targetEsimId}, ${plan.data_amount_gb}, 0, 0, now(),
+        0, ${start_date}, ${expiryDateStr}, ${planStatus}, now()
       )
     `;
 
     // Log the action
     await sql`
       INSERT INTO activity_log (admin_id, action, target_type, target_id, details)
-      VALUES (${admin.id}, 'assigned_plan', 'customer', ${id}, ${`Added plan to "${customer[0].username}"`})
+      VALUES (${admin.id}, 'assigned_plan', 'customer', ${id}, ${`Added plan "${plan.name}" (${planStatus}) to "${customer[0].username}"`})
     `;
 
     return NextResponse.json({ success: true });

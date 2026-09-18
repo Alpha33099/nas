@@ -1,5 +1,6 @@
 import { sql } from "@/lib/db";
 import { decrypt } from "@/lib/encryption";
+import { syncCustomerPlans } from "@/lib/plan-lifecycle";
 import { notFound } from "next/navigation";
 import CustomerDetail from "./CustomerDetail";
 
@@ -9,6 +10,9 @@ export default async function CustomerDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
+
+  // Enforce customer plan lifecycle rules (auto-expire expired plans & promote queued plans)
+  await syncCustomerPlans(id);
 
   // Fetch customer with location intelligence
   const customers = await sql`
@@ -29,17 +33,25 @@ export default async function CustomerDetailPage({
 
   const customer = customers[0];
 
-  // Fetch all plans for this customer
+  // Fetch all plans for this customer (LEFT JOIN to prevent plans vanishing if template deleted)
   const plans = await sql`
     SELECT 
       cp.id, cp.total_gb, cp.used_gb, cp.manual_used_gb, cp.manual_updated_at,
       cp.daily_burn_rate, cp.start_date, cp.expiry_date,
       cp.status, cp.last_usage_update_at, cp.created_at, cp.esim_id,
-      pc.name as plan_name, pc.data_amount_gb as plan_data_gb
+      COALESCE(cp.plan_name, pc.name, 'Travel Data Plan') as plan_name,
+      COALESCE(cp.validity_days, pc.validity_days, 30) as validity_days,
+      COALESCE(pc.data_amount_gb, cp.total_gb) as plan_data_gb
     FROM customer_plans cp
-    JOIN plans_catalog pc ON cp.plan_catalog_id = pc.id
+    LEFT JOIN plans_catalog pc ON cp.plan_catalog_id = pc.id
     WHERE cp.customer_id = ${id}
-    ORDER BY cp.status ASC, cp.expiry_date ASC
+    ORDER BY 
+      CASE 
+        WHEN cp.status = 'active' THEN 1 
+        WHEN cp.status = 'inactive' THEN 2 
+        ELSE 3 
+      END ASC, 
+      cp.created_at ASC
   `;
 
   // Fetch linked eSIMs (decrypt server-side only)

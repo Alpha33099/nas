@@ -190,13 +190,23 @@ export async function GET(request: NextRequest) {
 
       // Fetch catalog details for validity calculation
       const catalog = await sql`
-        SELECT data_amount_gb, validity_days
+        SELECT name, data_amount_gb, validity_days
         FROM plans_catalog
         WHERE id = ${session.plan_catalog_id}
       `;
 
       const validityDays = catalog.length > 0 ? Number(catalog[0].validity_days) : 30;
       const dataGb = catalog.length > 0 ? Number(catalog[0].data_amount_gb) : 10;
+      const planName = session.plan_name || catalog[0]?.name || "Travel Data Plan";
+
+      // Check if customer already has an active plan
+      const activeExisting = await sql`
+        SELECT id FROM customer_plans
+        WHERE customer_id = ${session.customer_id} AND status = 'active'
+        LIMIT 1
+      `;
+      const isQueued = activeExisting.length > 0;
+      const planStatus = isQueued ? "inactive" : "active";
 
       const startDate = new Date().toISOString().split("T")[0];
       const expiryDate = new Date();
@@ -205,16 +215,16 @@ export async function GET(request: NextRequest) {
 
       const newPlanId = crypto.randomUUID();
 
-      // Insert and activate customer plan
+      // Insert customer plan (active or queued inactive)
       await sql`
         INSERT INTO customer_plans (
-          id, customer_id, plan_catalog_id, esim_id, total_gb, used_gb,
-          manual_used_gb, manual_updated_at, daily_burn_rate,
-          start_date, expiry_date, status, created_at
+          id, customer_id, plan_catalog_id, plan_name, validity_days,
+          esim_id, total_gb, used_gb, manual_used_gb, manual_updated_at,
+          daily_burn_rate, start_date, expiry_date, status, created_at
         ) VALUES (
-          ${newPlanId}, ${session.customer_id}, ${session.plan_catalog_id}, ${assignedEsimId},
-          ${dataGb}, 0, 0, now(), 0,
-          ${startDate}, ${expiryDateStr}, 'active', now()
+          ${newPlanId}, ${session.customer_id}, ${session.plan_catalog_id}, ${planName}, ${validityDays},
+          ${assignedEsimId}, ${dataGb}, 0, 0, now(),
+          0, ${startDate}, ${expiryDateStr}, ${planStatus}, now()
         )
       `;
 
@@ -228,16 +238,21 @@ export async function GET(request: NextRequest) {
         WHERE id = ${sessionId}
       `;
 
+      const confirmationMsg = isQueued
+        ? "Payment confirmed! Your plan is queued and will activate automatically when your current plan finishes."
+        : hasEsim
+        ? "Payment confirmed! Your eSIM profile is ready."
+        : "Payment confirmed! Your plan is active; eSIM profile will be added shortly.";
+
       return NextResponse.json({
         status: "confirmed",
         receivedAmount: totalReceived,
         expectedAmount,
         hasEsim,
         planId: newPlanId,
-        autoActivated: true,
-        message: hasEsim
-          ? "Payment confirmed! Your eSIM profile is ready."
-          : "Payment confirmed! Your plan is active; eSIM profile will be added shortly.",
+        planStatus,
+        autoActivated: !isQueued,
+        message: confirmationMsg,
       });
     }
 

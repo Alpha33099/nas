@@ -16,7 +16,7 @@ export async function GET() {
         c.display_name,
         c.last_login_at,
         c.created_at as customer_created,
-        pc.name as plan_name,
+        COALESCE(cp.plan_name, pc.name, 'Travel Data Plan') as plan_name,
         cp.total_gb,
         cp.used_gb,
         cp.start_date,

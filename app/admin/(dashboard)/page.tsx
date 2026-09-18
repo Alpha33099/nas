@@ -13,9 +13,9 @@ export default async function AdminDashboardPage() {
   const expiringSoonRaw = await sql`
     SELECT cp.id, cp.expiry_date, cp.total_gb, cp.used_gb, cp.manual_used_gb, cp.manual_updated_at,
            cp.daily_burn_rate, cp.start_date, cp.status, cp.last_usage_update_at, cp.created_at,
-           pc.name as plan_name, c.display_name, c.username
+           COALESCE(cp.plan_name, pc.name, 'Travel Data Plan') as plan_name, c.display_name, c.username
     FROM customer_plans cp
-    JOIN plans_catalog pc ON cp.plan_catalog_id = pc.id
+    LEFT JOIN plans_catalog pc ON cp.plan_catalog_id = pc.id
     JOIN customers c ON cp.customer_id = c.id
     WHERE cp.status = 'active'
       AND cp.expiry_date <= CURRENT_DATE + INTERVAL '3 days'
@@ -34,9 +34,9 @@ export default async function AdminDashboardPage() {
   const activePlansForAlerts = await sql`
     SELECT cp.id, cp.total_gb, cp.used_gb, cp.manual_used_gb, cp.manual_updated_at, cp.daily_burn_rate,
            cp.start_date, cp.expiry_date, cp.status, cp.last_usage_update_at, cp.created_at,
-           pc.name as plan_name, c.display_name, c.username, c.id as customer_id
+           COALESCE(cp.plan_name, pc.name, 'Travel Data Plan') as plan_name, c.display_name, c.username, c.id as customer_id
     FROM customer_plans cp
-    JOIN plans_catalog pc ON cp.plan_catalog_id = pc.id
+    LEFT JOIN plans_catalog pc ON cp.plan_catalog_id = pc.id
     JOIN customers c ON cp.customer_id = c.id
     WHERE cp.status = 'active'
       AND cp.total_gb > 0

@@ -19,6 +19,7 @@ interface Plan {
   last_usage_update_at: string | null;
   created_at?: string | null;
   esim_id: string | null;
+  validity_days?: number;
 }
 
 interface Esim {
@@ -147,7 +148,9 @@ export default function CustomerDetail({
   const [locationSaving, setLocationSaving] = useState(false);
 
   const activePlans = plans.filter((p) => p.status === "active");
+  const queuedPlans = plans.filter((p) => p.status === "inactive");
   const expiredPlans = plans.filter((p) => p.status === "expired");
+  const [activateLoading, setActivateLoading] = useState<string | null>(null);
 
   function showSuccess(msg: string) {
     setSuccessMsg(msg);
@@ -276,6 +279,32 @@ export default function CustomerDetail({
       setError("Failed to delete plan.");
       setDeletePlanLoading(false);
       setDeletePlanId(null);
+    }
+  }
+
+  // ── Activate Queued Plan Manually ────────────────────
+  async function handleActivatePlan(planId: string) {
+    setActivateLoading(planId);
+    setError("");
+
+    try {
+      const res = await fetch(`/api/admin/customers/${customer.id}/activate-plan`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ plan_id: planId }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || "Failed to activate plan.");
+        setActivateLoading(null);
+        return;
+      }
+      setActivateLoading(null);
+      showSuccess("Plan activated! Validity timer and usage have started fresh.");
+      router.refresh();
+    } catch {
+      setError("Failed to activate plan.");
+      setActivateLoading(null);
     }
   }
 
@@ -970,6 +999,102 @@ export default function CustomerDetail({
           </div>
         )}
       </div>
+
+      {/* ── Queued Plans (Upcoming / Inactive) ───────────── */}
+      {queuedPlans.length > 0 && (
+        <div className="space-y-4">
+          <div className="flex items-center gap-2">
+            <h2 className="text-base font-bold text-slate-900">
+              Queued Bundles (Upcoming)
+            </h2>
+            <span className="text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200 px-2 py-0.5 rounded-full">
+              {queuedPlans.length} Queued
+            </span>
+          </div>
+
+          <div className="space-y-3">
+            {queuedPlans.map((plan) => (
+              <div key={plan.id} className="bg-white rounded-2xl border border-dashed border-amber-300 p-5 sm:p-6 shadow-2xs">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-lg bg-amber-50 border border-amber-200 flex items-center justify-center text-amber-600">
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-bold text-slate-900">{plan.plan_name} Bundle</h3>
+                      <p className="text-2xs text-slate-400 font-mono">Plan ID: {plan.id.slice(0, 8)}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="inline-flex items-center gap-1.5 text-2xs font-bold text-amber-800 bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-full">
+                      ⏳ Queued (Inactive)
+                    </span>
+                  </div>
+                </div>
+
+                <div className="bg-amber-50/60 rounded-xl p-3.5 border border-amber-100 mb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+                  <div>
+                    <span className="font-bold text-slate-800">Total Quota: </span>
+                    <span className="font-semibold text-slate-900 font-mono">{Number(plan.total_gb)} GB</span>
+                    <span className="text-slate-500 ml-2">(0.00 GB used — frozen on standby)</span>
+                  </div>
+                  <div className="text-2xs text-amber-900 font-medium">
+                    ⚡ Auto-activates when current active plan expires or runs out of data
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-slate-100">
+                  <div className="text-2xs text-slate-500">
+                    Validity: <strong className="text-slate-700">{plan.validity_days || 30} days</strong> (starts countdown on day of activation)
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => handleActivatePlan(plan.id)}
+                      disabled={activateLoading === plan.id}
+                      className="px-3.5 py-1.5 bg-teal-600 hover:bg-teal-700 text-white text-xs font-semibold rounded-lg transition-colors shadow-2xs disabled:opacity-50"
+                    >
+                      {activateLoading === plan.id ? "Activating..." : "Activate Now"}
+                    </button>
+                    <button
+                      onClick={() => setDeletePlanId(plan.id)}
+                      className="px-3 py-1.5 text-xs font-semibold text-rose-600 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition-colors border border-transparent hover:border-rose-200"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </div>
+
+                {deletePlanId === plan.id && (
+                  <div className="mt-3 p-3.5 bg-rose-50 border border-rose-200 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-in fade-in">
+                    <div>
+                      <p className="text-xs font-bold text-rose-900">Remove this queued plan?</p>
+                      <p className="text-2xs text-rose-700">This will cancel and permanently remove this queued package.</p>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        onClick={() => handleDeletePlan(plan.id)}
+                        disabled={deletePlanLoading}
+                        className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold rounded-lg transition-colors"
+                      >
+                        {deletePlanLoading ? "Deleting..." : "Yes, Delete"}
+                      </button>
+                      <button
+                        onClick={() => setDeletePlanId(null)}
+                        disabled={deletePlanLoading}
+                        className="px-3 py-1.5 bg-white text-slate-700 text-xs font-semibold rounded-lg border border-slate-300 hover:bg-slate-50 transition-colors"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* ── Linked eSIMs ──────────────────────────────── */}
       {esims.length > 0 && (
