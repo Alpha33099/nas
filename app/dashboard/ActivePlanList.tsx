@@ -24,6 +24,7 @@ export interface PlanItem {
   activation_code?: string | null;
   provider_name?: string | null;
   notes?: string | null;
+  validity_days?: number;
 }
 
 interface Props {
@@ -265,7 +266,7 @@ export default function ActivePlanList({ plans, username }: Props) {
                     <p className="text-xs text-slate-500">
                       <span className="font-semibold text-slate-700">{Number(plan.total_gb).toFixed(2)} GB Data</span>
                       {" • "}
-                      <span>{plan.daysRemaining || 30} Days Validity (Countdown begins upon auto-activation)</span>
+                      <span>{plan.validity_days || plan.daysRemaining || 7} Days Validity (Countdown begins upon auto-activation)</span>
                     </p>
                   </div>
 
